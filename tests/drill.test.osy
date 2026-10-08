@@ -1,0 +1,68 @@
+// THE ROWS BEHIND A FIGURE, AND THE DAYS SOMEBODY CHOSE — a drill-through lists exactly the rows a figure or one group
+// counted, over the roastery's September (roastery.test.osy); a chosen period counts the days picked, and a saved report
+// keeps them.
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+/// A group's rows are the rows its figure counted: Coast placed two orders in September and shipped one (o3, Fjord
+/// Coffee) — "Shipped" for Coast lists that one, not both.
+[Test(Roastery)]
+[runas(Olle)]
+void a_groups_rows_are_the_rows_its_figure_counted() {
+  var q = Orders([Curated("shipped"), Curated("orders")],
+                 groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]);
+  var a = RunSourceReport("orders", q, PeriodPreset.Last30Days);
+  var coast = a.Result.Rows.FindIndex(r => r.Cells[0].Text == "Coast");
+  Assert.Equal("Coast | 1 | 2", RowText(a.Result, coast));
+  var shipped = RunSourceRows("orders", q, "shipped", PeriodPreset.Last30Days, columns: a.Result.Columns, row: a.Result.Rows[coast]);
+  Assert.Equal("", shipped.Result.Problem);
+  Assert.Equal(1, shipped.Result.Rows.Count);
+  Assert.Equal("Fjord Coffee", shipped.Result.Rows[0].Cells[0].Text);
+  var placed = RunSourceRows("orders", q, "orders", PeriodPreset.Last30Days, columns: a.Result.Columns, row: a.Result.Rows[coast]);
+  Assert.Equal(2, placed.Result.Rows.Count);
+}
+
+/// Every headline figure's rows number what the figure says — and a ratio's rows are its denominator's.
+[Test(Roastery)]
+[runas(Olle)]
+void each_figures_rows_number_what_the_figure_says() {
+  var q = Orders([Curated("orders"), Curated("shipped"), Curated("waiting"), Curated("shippedShare")]);
+  var a = RunSourceReport("orders", q, PeriodPreset.Last30Days);
+  Assert.Equal(7, RunSourceRows("orders", q, "orders", PeriodPreset.Last30Days).Result.Rows.Count);
+  Assert.Equal(4, RunSourceRows("orders", q, "shipped", PeriodPreset.Last30Days).Result.Rows.Count);
+  Assert.Equal(3, RunSourceRows("orders", q, "waiting", PeriodPreset.Last30Days).Result.Rows.Count);
+  Assert.Equal(7, RunSourceRows("orders", q, "shippedShare", PeriodPreset.Last30Days).Result.Rows.Count);
+  Assert.Equal("7 | 4 | 3 | 57.1%", RowText(a.Result, 0));
+}
+
+/// A day of a trend opens that day's rows — the bucket's span on the report's clock.
+[Test(Roastery)]
+[runas(Olle)]
+void a_day_of_a_trend_opens_that_days_rows() {
+  var q = Orders([Curated("orders")], groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.PlacedAt) }]);
+  var a = RunSourceReport("orders", q, PeriodPreset.Last7Days);
+  Assert.Equal("28 Sep 2026 | 1", RowText(a.Result, 4));
+  var day = RunSourceRows("orders", q, "orders", PeriodPreset.Last7Days, columns: a.Result.Columns, row: a.Result.Rows[4]);
+  Assert.Equal(1, day.Result.Rows.Count);
+  var quiet = RunSourceRows("orders", q, "orders", PeriodPreset.Last7Days, columns: a.Result.Columns, row: a.Result.Rows[0]);
+  Assert.Equal(0, quiet.Result.Rows.Count);
+}
+
+/// Two days somebody chose: 10–15 September holds o2, o3 and o4. A saved report keeps the days and opens on them.
+[Test(Roastery)]
+[runas(Olle)]
+void a_chosen_period_counts_the_days_picked_and_a_saved_report_keeps_them() {
+  var q = Orders([Curated("orders")]);
+  var a = RunSourceReport("orders", q, PeriodPreset.Custom, new DateOnly(2026, 9, 10), new DateOnly(2026, 9, 15));
+  Assert.Equal("10 Sep – 15 Sep 2026", a.Period);
+  Assert.Equal("3", RowText(a.Result, 0));
+  var id = SaveReport("orders", "Mid September", q, PeriodPreset.Custom, false, new DateOnly(2026, 9, 10), new DateOnly(2026, 9, 15));
+  var opened = OpenReport(id)!;
+  Assert.Equal(PeriodPreset.Custom, opened.Period);
+  Assert.Equal(new DateOnly(2026, 9, 10), opened.FirstDay);
+  Assert.Equal(new DateOnly(2026, 9, 15), opened.LastDay);
+  // Saved again on a preset, the days are gone — a preset has none.
+  SaveReport("orders", "Mid September", q, PeriodPreset.Last30Days, false, new DateOnly(2026, 9, 10), new DateOnly(2026, 9, 15));
+  Assert.Null(OpenReport(id)!.FirstDay);
+}

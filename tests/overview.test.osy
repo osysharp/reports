@@ -1,0 +1,94 @@
+// THE OVERVIEW — the period's figures with their change, what stands open now whenever it arrived, a trend and a
+// breakdown; each reader sees their own, and an empty period says so.
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+// "Waiting to ship" as things stand counts every unshipped order, whenever it was placed (o4 15 Sep, o6 28 Sep, o8
+// 30 Sep); over today alone it is only o8. The overview's backlog is the first.
+[Test(Roastery)]
+[runas(Olle)]
+void what_stands_open_now_is_counted_whenever_it_arrived() {
+  var waiting = Orders([Curated("waiting")]);
+  Assert.Equal("3", RowText(RunSourceNow("orders", waiting), 0));
+  Assert.Equal("1", RowText(RunSourceReport("orders", waiting, PeriodPreset.Today).Result, 0));
+}
+
+[Test(Roastery)]
+void what_stands_open_now_is_the_readers_own() {
+  // Ada's cafés (Northwind, Fjord) have shipped everything; Bo's (Pier o4, Kiln o6) have two waiting.
+  runas (Ada) { Assert.Equal("0", RowText(RunSourceNow("orders", Orders([Curated("waiting")])), 0)); }
+  runas (Bo) { Assert.Equal("2", RowText(RunSourceNow("orders", Orders([Curated("waiting")])), 0)); }
+}
+
+[Test(Roastery)]
+void the_overview_shows_the_figures_the_trend_and_a_breakdown() {
+  Ui.SignInAs(Olle);
+  Ui.Viewport(1440, 1000);
+  Ui.Visit("/overview");
+  Assert.Visible("Orders");
+  Assert.Visible("1 Sep – 30 Sep 2026");
+  Assert.Visible("Waiting to ship");
+  Assert.Visible("Orders per day");
+  Assert.Visible("Breakdown");
+  Assert.Visible("City");
+  Ui.Shot("overview-wide-light");
+  Ui.Click("Courier");
+  Assert.Visible("Bike courier");
+  Ui.Shot("overview-by-courier-wide-light");
+  Ui.Click("Export CSV");
+  Assert.Visible("Download CSV");
+  Ui.Theme("dark");
+  Ui.Shot("overview-by-courier-wide-dark");
+  Ui.Viewport(390, 844);
+  Ui.Theme("light");
+  Ui.Shot("overview-phone-light");
+}
+
+[Test(Roastery)]
+void a_quiet_period_says_there_is_nothing_in_it() {
+  Ui.SignInAs(Ada);
+  Ui.Viewport(1440, 1000);
+  Ui.Visit("/overview");
+  Ui.Click("Today");
+  Assert.Visible("No orders in this period.");
+  Assert.Visible("Nothing here yet");
+  Ui.Shot("overview-empty-wide-light");
+}
+
+// ONE OVERVIEW, TWO SOURCES: orders counted over orders, lines over lines, each in its own query, and the breakdown
+// joins them on the grouping both call "Region". Lines in September: North 3 (o1 two, o2 one), Coast 3 (o3 two, o4
+// one), City 3 (o5 one, o6 two). The lines source has no "Courier", so by courier its column is "–", never a number
+// counted for something else.
+[Test(Roastery)]
+[runas(Olle)]
+void a_second_source_joins_the_breakdown_on_the_grouping_of_the_same_name() {
+  var o = TheOrderReport();
+  var l = TheLineReport();
+  var a = RunOverview("orders", [o.Orders, l.Lines], [], [], null, 0, PeriodPreset.Last30Days);
+  Assert.Equal("", a.Problem);
+  Assert.Equal("Orders: 7 · Lines: 9", String.Join(" · ", a.Figures.Select(f => $"{f.Label}: {f.Value}")));
+  Assert.Equal("City | 3 | 3\nCoast | 2 | 3\nNorth | 2 | 3", Rows(a.Breakdown));
+  Assert.Equal("Lines", HeadingOf(a.Breakdown.Columns[2], a.Words));
+  var byCourier = RunOverview("orders", [o.Orders, l.Lines], [], [], null, 2, PeriodPreset.Last30Days);
+  Assert.Equal("Bike courier | 3 | –\nPost | 3 | –\nFreight | 1 | –", Rows(byCourier.Breakdown));
+}
+
+// …and each source answers the reader as they may read it: Ada's cafés are Northwind (o1, o2: three lines) and Fjord
+// (o3: two lines).
+[Test(Roastery)]
+[runas(Ada)]
+void each_source_of_an_overview_answers_the_reader() {
+  var a = RunOverview("orders", [TheOrderReport().Orders, TheLineReport().Lines], [], [], null, 0, PeriodPreset.Last30Days);
+  Assert.Equal("North | 2 | 3\nCoast | 1 | 2", Rows(a.Breakdown));
+}
+
+// A measure handed over from a page is checked against its source: one the source does not have is refused in words,
+// never answered as something else.
+[Test(Roastery)]
+[runas(Olle)]
+void a_measure_the_source_does_not_have_is_refused() {
+  var forged = new ReportMeasure { Label = "Margin", Source = "orders", Measure = new ExploreMeasure { Name = "margin" } };
+  var a = RunOverview("orders", [TheOrderReport().Orders, forged], [], [], null, 0, PeriodPreset.Last30Days);
+  Assert.Equal("'Margin' is not one of the measures of Orders.", a.Problem);
+}

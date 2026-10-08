@@ -1,0 +1,205 @@
+namespace ReportsKitTests;
+
+using Osysharp.Identity;
+using Osysharp.Explore;
+using Osysharp.Reports;
+
+// A COFFEE ROASTER'S WHOLESALE ORDERS. Cafés order beans; a courier ships them. The roasters read every order; a sales
+// rep reads only the orders of the cafés they look after; the owner alone sees what an order earned (`Margin`), and
+// alone shares reports with the team. A café's contact address is personal data.
+
+[Role] enum RoasteryRole { Authenticator, Roaster, Rep, Owner }
+
+policy IsRoaster => RoleGrant.Any(g => g.Member == user && (g.Role == RoasteryRole.Roaster || g.Role == RoasteryRole.Owner));
+policy IsRep => RoleGrant.Any(g => g.Member == user && g.Role == RoasteryRole.Rep);
+policy IsOwner => RoleGrant.Any(g => g.Member == user && g.Role == RoasteryRole.Owner);
+policy IsStaff => IsRoaster || IsRep;
+
+/// The kit's two questions: everybody on the staff reads reports; the owner shares them with the team.
+policy ReadsReports => IsStaff;
+policy SharesReports => IsOwner;
+/// …and the owner sets the time zone the roastery's days are counted in.
+policy ManagesClock => IsOwner;
+
+/// Somebody who signs in — a roaster, a rep or the owner — with a code, all a test needs.
+entity Person : Principal {
+  [MaxLength(200)] string CodeHash = "";
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+    deny read CodeHash when !IsAuthenticator;
+  }
+}
+
+/// Where a café is.
+entity Region {
+  [Required, MaxLength(60)] string Name;
+  security { allow read when IsStaff; allow create when IsRoaster; }
+}
+
+/// What a café pays — the owner's business; nobody else reads a price list, so no path into one is offered to them.
+entity PriceList {
+  [Required, MaxLength(60)] string Name;
+  security { allow read, create when IsOwner; }
+}
+
+/// A café that buys beans — looked after by one rep.
+entity Cafe {
+  [Required, MaxLength(120)] string Name;
+  [Required] Region Region;
+  Person? Rep;
+  PriceList? PriceList;
+  [Classification(Personal.Contact), MaxLength(320)] string Contact = "";
+  security {
+    allow read, create when IsRoaster;
+    allow read when IsRep where Rep == user;
+  }
+}
+
+/// Who carries an order.
+enum Courier { [Label("Bike courier")] Bike, [Label("Post")] Post, [Label("Freight")] Freight }
+
+/// Where an order stands.
+enum OrderStatus { [Label("Placed")] Placed, [Label("Roasting")] Roasting, [Label("Shipped")] Shipped, [Label("Cancelled")] Cancelled }
+
+/// One wholesale order.
+entity Order {
+  [Required] Cafe Cafe;
+  DateTime PlacedAt;
+  DateTime? ShippedAt;
+  decimal Kilos;
+  /// What the café pays.
+  decimal Value;
+  /// What the roastery earns on it — the owner's figure alone.
+  decimal Margin;
+  Courier Courier = Courier.Post;
+  OrderStatus Status = OrderStatus.Placed;
+  /// How long the beans were in the roaster — called what the roasters call it, wherever a report names the field.
+  [Label("Time in the roaster")] TimeSpan RoastTime = TimeSpan.Zero;
+  bool Organic = false;
+  [ForeignKey(Order)] OrderLine[] Lines;
+  security {
+    allow read, create when IsRoaster;
+    allow read when IsRep where Cafe.Rep == user;
+    deny read Margin when !IsOwner;
+  }
+}
+
+/// A coffee on an order — many per order, so a report across them crosses a collection.
+entity OrderLine {
+  [Required] Order Order;
+  [Required, MaxLength(80)] string Coffee;
+  decimal Kilos;
+  security {
+    allow read, create when IsRoaster;
+    allow read when IsRep where Order.Cafe.Rep == user;
+  }
+}
+
+// ── what the roastery reports on ──────────────────────────────────────────────────────────────────────────────────────
+
+/// Orders, in the roastery's own words — found by the kit without being listed.
+public class OrderReports : IReportSource {
+  public ReportSource Describe() { return OrderSource(); }
+}
+
+/// The lines of the orders — a second source, so an overview of orders can show a figure counted over lines. Its
+/// "Region" is the line's order's café's region: the overview joins the two on it.
+public class LineReports : IReportSource {
+  public ReportSource Describe() { return TheLineReport().Source; }
+}
+
+/// The lines source, with its measure as a member — so an overview names it by reference, and a typo is a compile error.
+public class LineReport {
+  public ReportSource Source = new ReportSource();
+  public ReportMeasure Lines = new ReportMeasure();
+}
+
+public LineReport TheLineReport() {
+  var r = new LineReport();
+  r.Lines = new ReportMeasure { Label = "Lines", Hint = "Coffees on the orders.", Format = FigureFormat.Count,
+                                Measure = new ExploreMeasure { Name = "lines" } };
+  r.Source = Keyed(new ReportSource {
+    Key = "lines", Title = "Order lines", Root = Explore.Root<OrderLine>(), Noun = "line", Nouns = "lines",
+    Date = Explore.Path<OrderLine>(l => l.Order.PlacedAt),
+    Measures = [r.Lines],
+    Dimensions = [
+      new ReportDimension { Field = Explore.Path<OrderLine>(l => l.Order.Cafe.Region), Label = "Region" },
+      new ReportDimension { Field = Explore.Path<OrderLine>(l => l.Coffee), Label = "Coffee" },
+    ],
+  });
+  return r;
+}
+
+/// The orders source, its measures as members.
+public class OrderReport {
+  public ReportSource Source = new ReportSource();
+  public ReportMeasure Orders = new ReportMeasure();
+  public ReportMeasure Kilos = new ReportMeasure();
+  public ReportMeasure Value = new ReportMeasure();
+  public ReportMeasure Shipped = new ReportMeasure();
+  public ReportMeasure ShippedShare = new ReportMeasure();
+  public ReportMeasure TimeToShip = new ReportMeasure();
+  public ReportMeasure TimeToShipSlowest = new ReportMeasure();
+  public ReportMeasure Waiting = new ReportMeasure();
+}
+
+public OrderReport TheOrderReport() {
+  var placed = Explore.Path<Order>(o => o.PlacedAt);
+  var shipped = Explore.Path<Order>(o => o.ShippedAt);
+  var r = new OrderReport();
+  r.Orders = new ReportMeasure { Label = "Orders", Hint = "Orders placed in the period.", Format = FigureFormat.Count,
+                                 Measure = new ExploreMeasure { Name = "orders" } };
+  r.Kilos = new ReportMeasure { Label = "Kilos", Hint = "Beans ordered, in kilos.", Format = FigureFormat.Number,
+                                Measure = new ExploreMeasure { Name = "kilos", Kind = MeasureKind.Sum, Field = Explore.Path<Order>(o => o.Kilos) } };
+  r.Value = new ReportMeasure { Label = "Value", Hint = "What the cafés pay, in kronor.", Format = FigureFormat.Number,
+                                Measure = new ExploreMeasure { Name = "value", Kind = MeasureKind.Sum, Field = Explore.Path<Order>(o => o.Value) } };
+  r.Shipped = new ReportMeasure { Label = "Shipped", Hint = "Orders on their way.", Format = FigureFormat.Count,
+                                  Measure = new ExploreMeasure { Name = "shipped",
+                                    Where = [new ExploreFilter { Field = shipped, Op = FilterOp.HasValue }] } };
+  r.ShippedShare = new ReportMeasure { Label = "Shipped share", Hint = "Shipped, of everything ordered.", Format = FigureFormat.Percent,
+                                       Measure = new ExploreMeasure { Name = "shippedShare", Kind = MeasureKind.Ratio, Numerator = "shipped", Denominator = "orders" } };
+  r.TimeToShip = new ReportMeasure { Label = "Time to ship", Hint = "Half of the shipped orders left sooner than this.",
+                                     Format = FigureFormat.Duration, HigherIsBetter = false,
+                                     Measure = new ExploreMeasure { Name = "shipMedian", Kind = MeasureKind.Median, Field = shipped, Since = placed } };
+  r.TimeToShipSlowest = new ReportMeasure { Label = "Time to ship, slowest tenth", Hint = "Nine in ten shipped orders left sooner than this.",
+                                            Format = FigureFormat.Duration, HigherIsBetter = false,
+                                            Measure = new ExploreMeasure { Name = "shipP90", Kind = MeasureKind.Percentile, Fraction = 0.9m, Field = shipped, Since = placed } };
+  r.Waiting = new ReportMeasure { Label = "Waiting to ship", Hint = "Orders not shipped yet, whenever placed.", Format = FigureFormat.Count,
+                                  HigherIsBetter = false,
+                                  Measure = new ExploreMeasure { Name = "waiting",
+                                    Where = [new ExploreFilter { Field = shipped, Op = FilterOp.IsEmpty }] } };
+  r.Source = Keyed(new ReportSource {
+    Key = "orders", Title = "Orders", Root = Explore.Root<Order>(), Noun = "order", Nouns = "orders", Date = placed,
+    // What a drill-through lists of each order it opens.
+    RowFields = [Explore.Path<Order>(o => o.Cafe), placed, Explore.Path<Order>(o => o.Status)],
+    Measures = [r.Orders, r.Kilos, r.Value, r.Shipped, r.ShippedShare, r.TimeToShip, r.TimeToShipSlowest, r.Waiting],
+    Dimensions = [
+      new ReportDimension { Field = Explore.Path<Order>(o => o.Cafe.Region), Label = "Region" },
+      new ReportDimension { Field = Explore.Path<Order>(o => o.Cafe), Label = "Café" },
+      new ReportDimension { Field = Explore.Path<Order>(o => o.Courier), Label = "Courier" },
+      new ReportDimension { Field = Explore.Path<Order>(o => o.Status), Label = "Status" },
+      new ReportDimension { Field = Explore.Path<Order>(o => o.Cafe.Rep), Label = "Rep" },
+    ],
+  });
+  return r;
+}
+
+public ReportSource OrderSource() { return TheOrderReport().Source; }
+
+// ── signing in ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+[AuthMethod]
+string SignInWithCode(string email, string code) {
+  var p = Person.FirstOrDefault(x => x.Email == NormalisedEmail(email));
+  if (p == null || !p.IsActive) { Security.VerifyPassword(code); return ""; }
+  if (!Security.VerifyPassword(code, p.CodeHash)) { return ""; }
+  return Security.IssueJwt(p.Id, p.Email);
+}
+
+app.AuthBootstrap = new AuthBootstrap { Role = RoasteryRole.Authenticator, Login = SignInWithCode };
+app.Auth = new PasswordAuth { LoginField = Email, PasswordField = CodeHash };
+app.Audit = new AuditConfig { Redact = new AuditRedaction { Properties = [ReportsKitTests.Person.CodeHash] } };
+
+// A café's contact address is read by whoever may read the café.
+app = new() { Classifications = [ new Classification(Personal.Contact) { Open = true } ] };

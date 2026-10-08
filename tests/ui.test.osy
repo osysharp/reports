@@ -1,0 +1,137 @@
+// THE BUILDER ON SCREEN — driven as a person builds a report: the totals it opens on, a grouping through two relations,
+// a filter picked as a choice, a nested "any of" group, a condition on the groups, saving and exporting — wide and on a
+// phone, light and dark. `osy test --pixels` photographs each (`Ui.Shot`).
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+void OpenTheReport(int width, int height) {
+  Ui.Viewport(width, height);
+  Ui.Visit("/reports");
+  Assert.Visible("Orders");
+  Assert.Visible("1 Sep – 30 Sep 2026");
+}
+
+/// A figure opens the rows it counts: a region's row lists its orders, and a headline figure the rows behind it. Two days
+/// somebody chooses are the period the report counts over.
+[Test(Roastery)]
+void a_group_opens_its_rows_and_two_chosen_days_are_the_period() {
+  Ui.SignInAs(Olle);
+  OpenTheReport(1440, 900);
+  Ui.Click("Show the rows behind Orders");
+  Assert.Visible("The rows behind Orders");
+  Assert.Visible("Fjord Coffee", within: "The rows behind Orders");
+  Ui.Click("Close", within: "The rows behind Orders");
+  Ui.Click("Order › Café › Region");
+  Ui.Click("Group by");
+  Ui.Click("Show the rows of Coast");
+  Assert.Visible("The rows behind Coast");
+  Assert.Visible("Fjord Coffee", within: "The rows behind Coast");
+  Assert.Hidden("Northwind Café", within: "The rows behind Coast");
+  Ui.Shot("builder-rows-behind-a-group-wide-light");
+  Ui.Click("Dates…");
+  Ui.Fill("First day", "2026-09-10");
+  Ui.Fill("Last day", "2026-09-15");
+  Ui.Click("Show these days");
+  Assert.Visible("10 Sep – 15 Sep 2026");
+  Ui.Shot("builder-chosen-days-wide-light");
+}
+
+[Test(Roastery)]
+void the_builder_opens_on_the_periods_totals_and_groups_through_two_relations() {
+  Ui.SignInAs(Olle);
+  OpenTheReport(1440, 900);
+  Assert.Visible("Every row in the period");
+  Ui.Shot("builder-totals-wide-light");
+  Ui.Click("Order › Café › Region");
+  Ui.Click("Group by");
+  Assert.Visible("City");
+  Assert.Visible("Coast");
+  Ui.Shot("builder-by-region-wide-light");
+  Ui.Theme("dark");
+  Ui.Shot("builder-by-region-wide-dark");
+}
+
+[Test(Roastery)]
+void a_filter_is_picked_as_its_kind_wants_and_reads_back_as_a_sentence() {
+  Ui.SignInAs(Olle);
+  OpenTheReport(1440, 900);
+  Ui.Click("Order › Courier");
+  Ui.Click("Filter");
+  Assert.Visible("Only where courier…");
+  Ui.Click("Bike courier");
+  Ui.Shot("builder-filter-editor-wide-light");
+  Ui.Click("Apply filter");
+  Assert.Visible("Courier is Bike courier");
+  Ui.Shot("builder-filtered-wide-light");
+}
+
+[Test(Roastery)]
+void a_nested_any_of_group_holds_its_own_conditions() {
+  Ui.SignInAs(Olle);
+  OpenTheReport(1440, 900);
+  Ui.Click("Order › Courier");
+  Ui.Click("Filter");
+  Ui.Click("Bike courier");
+  Ui.Click("Apply filter");
+  Ui.Click("Add group");
+  Ui.Click("Order › Organic");
+  Ui.Click("Filter");
+  Ui.Click("Apply filter");
+  Ui.Click("Order › Kilos");
+  Ui.Click("Filter");
+  Ui.Click("more than");
+  Ui.Fill("Value", "8");
+  Ui.Click("Apply filter");
+  Assert.Visible("Organic is yes");
+  Assert.Visible("Kilos more than 8");
+  Ui.Shot("builder-nested-group-wide-light");
+  Ui.Viewport(390, 844);
+  Ui.Shot("builder-nested-group-phone-light");
+  Ui.Theme("dark");
+  Ui.Shot("builder-nested-group-phone-dark");
+}
+
+[Test(Roastery)]
+void show_groups_where_keeps_only_the_groups_that_pass() {
+  Ui.SignInAs(Olle);
+  OpenTheReport(1440, 900);
+  Ui.Click("Order › Café › Region");
+  Ui.Click("Group by");
+  Ui.Click("Add", within: "Show groups where");
+  Ui.Fill("Value", "2");
+  Ui.Click("Show these groups");
+  Assert.Visible("Orders more than 2");
+  Assert.Visible("City");
+  Assert.Hidden("North");
+  Ui.Shot("builder-having-wide-light");
+}
+
+[Test(Roastery)]
+void a_report_is_saved_by_name_and_exported_as_csv() {
+  Ui.SignInAs(Olle);
+  OpenTheReport(1440, 900);
+  Ui.Click("Order › Café › Region");
+  Ui.Click("Group by");
+  Ui.Click("Save");
+  Ui.Fill("Report name", "Orders by region");
+  Ui.Click("Save report");
+  Assert.Visible("Orders by region");
+  Ui.Click("Export CSV");
+  Assert.Visible("Download CSV");
+  Ui.Shot("builder-saved-wide-light");
+}
+
+[Test(Roastery)]
+void on_a_phone_the_fields_open_above_the_report() {
+  Ui.SignInAs(Olle);
+  OpenTheReport(390, 844);
+  Ui.Shot("builder-totals-phone-light");
+  Ui.Click("Add a field");
+  Ui.Fill("Find a field", "region");
+  Ui.Shot("builder-fields-phone-light");
+  Ui.Click("Order › Café › Region");
+  Ui.Click("Group by");
+  Assert.Visible("City");
+  Ui.Shot("builder-by-region-phone-light");
+}

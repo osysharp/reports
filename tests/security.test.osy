@@ -1,0 +1,77 @@
+// A REPORT IS ITS READER'S — and following a relation never leaks. A rep reads the orders of their own cafés and nothing
+// of what an order earned; the owner alone reads the price lists. The same report, run by each, answers each their own;
+// a field one of them may not read is never offered to them, and a report naming it is refused rather than answered.
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+[Test(Roastery)]
+void the_same_report_shows_each_reader_only_the_orders_they_may_read() {
+  var byRegion = Orders([Curated("orders")], groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]);
+  runas (Olle) {
+    Assert.Equal("City | 3\nCoast | 2\nNorth | 2", Rows(RunSourceReport("orders", byRegion, PeriodPreset.Last30Days).Result));
+  }
+  // Ada looks after Northwind (o1, o2) and Fjord (o3).
+  runas (Ada) {
+    Assert.Equal("Coast | 1\nNorth | 2", Rows(RunSourceReport("orders", byRegion, PeriodPreset.Last30Days).Result));
+  }
+  // Bo after Pier (o4) and Kiln (o6).
+  runas (Bo) {
+    Assert.Equal("City | 1\nCoast | 1", Rows(RunSourceReport("orders", byRegion, PeriodPreset.Last30Days).Result));
+  }
+}
+
+[Test(Roastery)]
+void a_field_masked_for_a_rep_is_not_offered_and_a_report_naming_it_is_refused() {
+  var margin = Explore.Path<Order>(o => o.Margin);
+  runas (Ada) {
+    var fields = OpenReportDesk("orders")!.Fields;
+    Assert.False(fields.Any(f => f.Path == margin));
+    var a = RunSourceReport("orders", Orders([new ExploreMeasure { Name = "m", Kind = MeasureKind.Sum, Field = margin }]),
+                            PeriodPreset.Last30Days);
+    Assert.Contains("not a field you can report on", a.Result.Problem);
+    Assert.Contains(margin, a.Result.Unreachable);
+  }
+  runas (Olle) {
+    Assert.True(OpenReportDesk("orders")!.Fields.Any(f => f.Path == margin));
+  }
+}
+
+[Test(Roastery)]
+void a_relation_into_what_a_rep_may_not_read_is_never_offered_and_a_filter_through_it_is_refused() {
+  runas (Ada) {
+    var fields = OpenReportDesk("orders")!.Fields;
+    Assert.False(fields.Any(f => f.Path.StartsWith("Cafe.PriceList")));
+    var a = RunSourceReport("orders", Orders([Curated("orders")],
+                                             filters: [new ExploreFilter { Field = "Cafe.PriceList.Name", Op = FilterOp.Is, Values = ["Wholesale 2026"] }]),
+                            PeriodPreset.Last30Days);
+    Assert.Contains("not a field you can report on", a.Result.Problem);
+    Assert.Contains("Cafe.PriceList.Name", a.Result.Unreachable);
+    // …and picking records through it offers none.
+    Assert.Equal(0, ReportChoices("orders", "Cafe.PriceList", "").Count);
+  }
+  runas (Olle) {
+    Assert.Equal(2, CountWhere(new ExploreFilter { Field = "Cafe.PriceList.Name", Op = FilterOp.Is, Values = ["Wholesale 2026"] }));
+  }
+}
+
+[Test(Roastery)]
+void picking_a_record_offers_only_the_records_the_reader_may_read() {
+  runas (Ada) {
+    var cafes = ReportChoices("orders", Explore.Path<Order>(o => o.Cafe), "");
+    Assert.Equal("Fjord Coffee, Northwind Café", String.Join(", ", cafes.Select(c => c.Text)));
+  }
+}
+
+[Test(Roastery)]
+void a_report_over_something_the_app_does_not_report_on_is_refused() {
+  runas (Olle) {
+    var a = RunReport(new ExploreQuery { Root = Explore.Root<Cafe>(), Measures = [new ExploreMeasure { Name = "n" }] });
+    Assert.Equal("This app does not report on that. Choose one of its reports.", a.Problem);
+  }
+}
+
+[Test(Roastery)]
+void a_person_who_does_not_read_reports_cannot_open_one() {
+  Assert.Denied(() => OpenReportDesk("orders"));
+}

@@ -1,0 +1,115 @@
+// The roastery every test starts from, on 30 September 2026 at noon (UTC — the report clock's default): Olle owns it, Mia
+// roasts, Ada and Bo are reps. Five cafés in three regions, and eight orders — seven of them placed in September, so
+// "the last 30 days" holds seven, and every figure below can be worked out by hand.
+//
+//   order  café            placed       shipped        kg  value  courier  status     roast  organic  lines
+//   o1     Northwind Café  2 Sep 09:00  3 Sep 09:00    10  2400   Bike     Shipped    1h     yes      Kenya AA 6, Brazil 4
+//   o2     Northwind Café  10 Sep 09:00 10 Sep 15:00    5  1200   Bike     Shipped    30m    no       Kenya AA 5
+//   o3     Fjord Coffee    12 Sep 08:00 14 Sep 08:00   20  4600   Freight  Shipped    2h     yes      Ethiopia 10, Kenya AA 10
+//   o4     Pier Coffee     15 Sep 10:00 —               8  1900   Post     Roasting   1h     no       Brazil 8
+//   o5     Corner Roast    20 Sep 11:00 21 Sep 11:00   12  2900   Post     Shipped    1h30m  yes      Ethiopia 12
+//   o6     Kiln & Cup      28 Sep 09:00 —               4   980   Bike     Placed     0      no       Kenya AA 2, Kenya AA 2
+//   o7     Kiln & Cup      20 Aug 09:00 21 Aug 09:00    6  1400   Post     Shipped    1h     no       —
+//   o8     Corner Roast    30 Sep 08:00 —               3   700   Post     Cancelled  0      no       —
+//
+// Regions: Northwind → North; Fjord and Pier → Coast; Corner and Kiln → City. Ada looks after Northwind and Fjord; Bo
+// after Pier and Kiln; nobody after Corner. Only Olle reads the price list Northwind is on.
+using Osysharp.Identity;
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+[TestFixture]
+void Roastery() {
+  TestClock.Set(new DateTime(2026, 9, 30, 12, 0, 0));
+  var olle = new Person { Email = "olle@roast.test", DisplayName = "Olle Berg", CodeHash = Security.HashPassword("1111") };
+  new RoleGrant { Member = olle, Role = RoasteryRole.Owner };
+  var mia = new Person { Email = "mia@roast.test", DisplayName = "Mia Holm", CodeHash = Security.HashPassword("2222") };
+  new RoleGrant { Member = mia, Role = RoasteryRole.Roaster };
+  var ada = new Person { Email = "ada@roast.test", DisplayName = "Ada Lind", CodeHash = Security.HashPassword("3333") };
+  new RoleGrant { Member = ada, Role = RoasteryRole.Rep };
+  var bo = new Person { Email = "bo@roast.test", DisplayName = "Bo Strand", CodeHash = Security.HashPassword("4444") };
+  new RoleGrant { Member = bo, Role = RoasteryRole.Rep };
+
+  var north = new Region { Name = "North" };
+  var coast = new Region { Name = "Coast" };
+  var city = new Region { Name = "City" };
+  var wholesale = new PriceList { Name = "Wholesale 2026" };
+  var northwind = new Cafe { Name = "Northwind Café", Region = north, Rep = ada, PriceList = wholesale, Contact = "hello@northwind.test" };
+  var fjord = new Cafe { Name = "Fjord Coffee", Region = coast, Rep = ada };
+  var pier = new Cafe { Name = "Pier Coffee", Region = coast, Rep = bo };
+  var corner = new Cafe { Name = "Corner Roast", Region = city };
+  var kiln = new Cafe { Name = "Kiln & Cup", Region = city, Rep = bo };
+
+  var o1 = OrderOf(northwind, Sep(2, 9), Sep(3, 9), 10m, 2400m, Courier.Bike, OrderStatus.Shipped, 60, true);
+  Line(o1, "Kenya AA", 6m); Line(o1, "Brazil", 4m);
+  var o2 = OrderOf(northwind, Sep(10, 9), Sep(10, 15), 5m, 1200m, Courier.Bike, OrderStatus.Shipped, 30, false);
+  Line(o2, "Kenya AA", 5m);
+  var o3 = OrderOf(fjord, Sep(12, 8), Sep(14, 8), 20m, 4600m, Courier.Freight, OrderStatus.Shipped, 120, true);
+  Line(o3, "Ethiopia", 10m); Line(o3, "Kenya AA", 10m);
+  var o4 = OrderOf(pier, Sep(15, 10), null, 8m, 1900m, Courier.Post, OrderStatus.Roasting, 60, false);
+  Line(o4, "Brazil", 8m);
+  var o5 = OrderOf(corner, Sep(20, 11), Sep(21, 11), 12m, 2900m, Courier.Post, OrderStatus.Shipped, 90, true);
+  Line(o5, "Ethiopia", 12m);
+  var o6 = OrderOf(kiln, Sep(28, 9), null, 4m, 980m, Courier.Bike, OrderStatus.Placed, 0, false);
+  Line(o6, "Kenya AA", 2m); Line(o6, "Kenya AA", 2m);
+  OrderOf(kiln, new DateTime(2026, 8, 20, 9, 0, 0), new DateTime(2026, 8, 21, 9, 0, 0), 6m, 1400m, Courier.Post, OrderStatus.Shipped, 60, false);
+  OrderOf(corner, Sep(30, 8), null, 3m, 700m, Courier.Post, OrderStatus.Cancelled, 0, false);
+}
+
+DateTime Sep(int day, int hour) { return new DateTime(2026, 9, day, hour, 0, 0); }
+
+Order OrderOf(Cafe cafe, DateTime placed, DateTime? shipped, decimal kilos, decimal value, Courier courier, OrderStatus status,
+              int roastMinutes, bool organic) {
+  return new Order { Cafe = cafe, PlacedAt = placed, ShippedAt = shipped, Kilos = kilos, Value = value, Margin = value / 4m,
+                     Courier = courier, Status = status, RoastTime = TimeSpan.FromMinutes(roastMinutes), Organic = organic };
+}
+
+void Line(Order o, string coffee, decimal kilos) { new OrderLine { Order = o, Coffee = coffee, Kilos = kilos }; }
+
+principal Olle => Person.Single(p => p.Email == "olle@roast.test");
+principal Mia => Person.Single(p => p.Email == "mia@roast.test");
+principal Ada => Person.Single(p => p.Email == "ada@roast.test");
+principal Bo => Person.Single(p => p.Email == "bo@roast.test");
+
+/// A query over orders — the measures and groupings named.
+ExploreQuery Orders(List<ExploreMeasure> measures, List<ExploreGroup>? groups = null, List<ExploreFilter>? filters = null,
+                    ExploreFilterGroup? where = null, List<ExploreHaving>? having = null) {
+  return new ExploreQuery { Root = Explore.Root<Order>(), Measures = measures, GroupBy = groups ?? [],
+                            Where = where ?? new ExploreFilterGroup { Filters = filters ?? [] }, Having = having ?? [] };
+}
+
+/// The source's curated measure called `name`.
+ExploreMeasure Curated(string name) {
+  return OrderSource().Measures.Single(m => m.Measure.Name == name).Measure;
+}
+
+/// One row of an answer, as the table writes it — cells joined with " | ".
+string RowText(ExploreResult r, int row) {
+  List<string> cells = [];
+  var source = OrderSource();
+  for (var i = 0; i < r.Columns.Count; i = i + 1) {
+    cells.Add(CellText(r.Rows[row].Cells[i], r.Columns[i].Kind, FormatOf(r.Columns[i], source)));
+  }
+  return String.Join(" | ", cells);
+}
+
+/// Every row of an answer, one per line.
+string Rows(ExploreResult r) {
+  if (r.Problem != "") { return "PROBLEM: " + r.Problem; }
+  List<string> lines = [];
+  for (var i = 0; i < r.Rows.Count; i = i + 1) { lines.Add(RowText(r, i)); }
+  return String.Join("\n", lines);
+}
+
+/// How many orders in the last 30 days match `filter`.
+int CountWhere(ExploreFilter filter) {
+  return CountIn(new ExploreFilterGroup { Filters = [filter] });
+}
+
+/// How many orders in the last 30 days match the conditions `where`.
+int CountIn(ExploreFilterGroup where) {
+  var a = RunSourceReport("orders", Orders([Curated("orders")], where: where), PeriodPreset.Last30Days);
+  Assert.Equal("", a.Result.Problem);
+  return Convert.ToInt(a.Result.Rows[0].Cells[0].Number!.Value);
+}

@@ -1,0 +1,131 @@
+// THE FILTERS — one per kind of field, each compiled to SQL by the platform and checked against the roastery's September
+// (seven orders in the last 30 days; see roastery.test.osy). Every value reaches the database as a parameter.
+using Osysharp.Explore;
+using Osysharp.Reports;
+using Osysharp.Clock;
+using ReportsKitTests;
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_choice_is_any_of_the_members_ticked() {
+  // Bike or freight: o1, o2, o3, o6.
+  Assert.Equal(4, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.Courier), Op = FilterOp.IsAnyOf,
+                                                 Values = ["Bike", "Freight"] }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_date_is_between_its_first_day_and_the_day_after_its_last() {
+  // 10–19 September: o2 (10th), o3 (12th), o4 (15th) — and not o5 on the 20th.
+  var days = DateFilterValues(PeriodPreset.Custom, new DateOnly(2026, 9, 10), new DateOnly(2026, 9, 19));
+  Assert.Equal(3, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.PlacedAt), Op = FilterOp.Between, Values = days }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_day_starts_at_midnight_in_the_apps_time_zone() {
+  // UTC until the owner picks a zone: 10 September is [10 Sep 00:00Z, 11 Sep 00:00Z).
+  var utc = DateFilterValues(PeriodPreset.Custom, new DateOnly(2026, 9, 10), new DateOnly(2026, 9, 10));
+  Assert.Equal(new DateTime(2026, 9, 10, 0, 0, 0).ToString("o"), utc[0]);
+  // In Stockholm, in summer time, the same day is [9 Sep 22:00Z, 10 Sep 22:00Z) — and the period follows at once.
+  new ClockSettings { TimeZone = Zone.Of("Europe/Stockholm") };
+  UnitOfWork.Commit();
+  var stockholm = DateFilterValues(PeriodPreset.Custom, new DateOnly(2026, 9, 10), new DateOnly(2026, 9, 10));
+  Assert.Equal(new DateTime(2026, 9, 9, 22, 0, 0).ToString("o"), stockholm[0]);
+  Assert.Equal(new DateTime(2026, 9, 10, 22, 0, 0).ToString("o"), stockholm[1]);
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_field_is_called_by_its_label_or_its_name_and_in_the_readers_language() {
+  var fields = OpenReportDesk("orders")!.Fields;
+  var roast = Explore.Path<Order>(o => o.RoastTime);
+  var placed = Explore.Path<Order>(o => o.PlacedAt);
+  var courier = Explore.Path<Order>(o => o.Courier);
+  // Its [Label], else its name in words — and a choice by its members' labels.
+  Assert.Equal("Time in the roaster", fields.Single(f => f.Path == roast).Label);
+  Assert.Equal("Placed at", fields.Single(f => f.Path == placed).Label);
+  Assert.Equal("Bike courier", fields.Single(f => f.Path == courier).ChoiceLabels[0]);
+  // In Swedish, both kinds of name are the translation `osy translate` keeps (tests/locales/sv.osy).
+  Session.SetLanguage("sv");
+  var sv = OpenReportDesk("orders")!.Fields;
+  Assert.Equal("Tid i rostern", sv.Single(f => f.Path == roast).Label);
+  Assert.Equal("Lagd", sv.Single(f => f.Path == placed).Label);
+  Assert.Equal("Cykelbud", sv.Single(f => f.Path == courier).ChoiceLabels[0]);
+  Session.SetLanguage("en");
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_number_is_equal_between_more_than_or_less_than() {
+  var kilos = Explore.Path<Order>(o => o.Kilos);
+  Assert.Equal(1, CountWhere(new ExploreFilter { Field = kilos, Op = FilterOp.Is, Values = ["20"] }));                // o3
+  Assert.Equal(3, CountWhere(new ExploreFilter { Field = kilos, Op = FilterOp.Between, Values = ["5", "12"] }));     // o2, o4, o1
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = kilos, Op = FilterOp.Above, Values = ["10"] }));            // o3, o5
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = kilos, Op = FilterOp.Below, Values = ["5"] }));             // o6, o8
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_duration_is_more_than_a_length() {
+  // Roasted for more than an hour: o3 (2 h), o5 (1 h 30 min).
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.RoastTime), Op = FilterOp.Above,
+                                                 Values = ["01:00:00"] }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void text_contains_starts_with_or_is() {
+  var name = Explore.Path<Order>(o => o.Cafe.Name);
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = name, Op = FilterOp.Contains, Values = ["Coffee"] }));      // o3, o4
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = name, Op = FilterOp.StartsWith, Values = ["Corner"] }));   // o5, o8
+  Assert.Equal(1, CountWhere(new ExploreFilter { Field = name, Op = FilterOp.Is, Values = ["Kiln & Cup"] }));       // o6
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_record_is_picked_by_name_and_matched_by_its_row() {
+  var picks = ReportChoices("orders", Explore.Path<Order>(o => o.Cafe), "north");
+  Assert.Equal(1, picks.Count);
+  Assert.Equal("Northwind Café", picks[0].Text);
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.Cafe), Op = FilterOp.IsAnyOf,
+                                                 Values = [$"{picks[0].Id}"], Labels = [picks[0].Text] }));        // o1, o2
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void yes_or_no() {
+  Assert.Equal(3, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.Organic), Op = FilterOp.Is, Values = ["true"] }));
+  Assert.Equal(4, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.Organic), Op = FilterOp.Is, Values = ["false"] }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void empty_or_with_a_value() {
+  var shipped = Explore.Path<Order>(o => o.ShippedAt);
+  Assert.Equal(3, CountWhere(new ExploreFilter { Field = shipped, Op = FilterOp.IsEmpty }));                         // o4, o6, o8
+  Assert.Equal(4, CountWhere(new ExploreFilter { Field = shipped, Op = FilterOp.HasValue }));
+  // A reference can be empty too: Corner Roast has no rep (o5, o8).
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.Cafe.Rep), Op = FilterOp.IsEmpty }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void across_a_collection_a_filter_says_any_none_or_all() {
+  var coffee = "Lines.Coffee";
+  // Brazil on any line: o1, o4. On none: the other five. Only Kenya AA: o2 and o6.
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = coffee, Op = FilterOp.Is, Values = ["Brazil"], Through = CollectionUse.Any }));
+  Assert.Equal(5, CountWhere(new ExploreFilter { Field = coffee, Op = FilterOp.Is, Values = ["Brazil"], Through = CollectionUse.None }));
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = coffee, Op = FilterOp.Is, Values = ["Kenya AA"], Through = CollectionUse.All }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_filter_reads_back_as_a_sentence() {
+  var fields = OpenReportDesk("orders")!.Fields;
+  Assert.Equal("Courier is Bike courier or Freight",
+               FilterWords(new ExploreFilter { Field = "Courier", Op = FilterOp.IsAnyOf, Values = ["Bike", "Freight"],
+                                               Labels = ["Bike courier", "Freight"] }, fields));
+  Assert.Equal("Cafe › Name contains “Coffee”",
+               FilterWords(new ExploreFilter { Field = "Cafe.Name", Op = FilterOp.Contains, Values = ["Coffee"], Labels = ["“Coffee”"] }, fields));
+}

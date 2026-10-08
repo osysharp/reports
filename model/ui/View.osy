@@ -1,0 +1,225 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Explore;
+using Osysharp.Charts;
+
+// ── showing an answer ─────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚑ DENSE BUT CALM: the numbers carry the page. Figures and cells are set in the theme's mono face with tabular digits,
+//   right-aligned so a column of numbers reads down; headings are quiet; colour is kept for one thing — a change that is
+//   good or bad news. Everything is the app's theme (`Colors.*`, `Font.*`), so a report looks like the app it is in.
+
+/// The grid line every row of a report table shares — the grouping columns wide, the measures narrow — so the columns
+/// line up from the heading down without a table element.
+public string TableCols(ExploreResult result) {
+  List<string> parts = [];
+  foreach (var c in result.Columns) { parts.Add(c.IsMeasure ? "minmax(96px, 1fr)" : "minmax(150px, 2fr)"); }
+  return String.Join(" ", parts);
+}
+
+/// A report's rows as a table: the groupings on the left in words, the measures on the right in figures. A row a person
+/// may open (`onRow`) is a button. Says so when the answer was cut at its limit.
+[Composable]
+public component ReportTable(ExploreResult result, ReportSource? source = null, string label = "Report",
+                             Action<int>? onRow = null) {
+  live var cols = TableCols(result);
+  render {
+    Stack(gap: 0, w: "100%", overflowX: Overflow.Auto, role: UiRole.Grid, label: label) {
+      Box(display: Display.Grid, cols: cols, gap: 3, px: 3, py: 2, minW: "fit-content", bg: Colors.Sunken,
+          borderBW: 1, border: Colors.Border, position: Position.Sticky, top: 0, role: UiRole.GridRow) {
+        foreach (var c in result.Columns) {
+          Text(HeadingOf(c, source), fontSize: FontSize.Caption, fontWeight: FontWeight.Semibold, color: Colors.TextSecondary,
+               textAlign: c.IsMeasure ? TextAlign.End : TextAlign.Start, whiteSpace: WhiteSpace.Nowrap,
+               role: UiRole.ColumnHeader);
+        }
+      }
+      foreach (var row in result.Rows) {
+        ReportTableRow(row, result, source, cols, result.Rows.IndexOf(row), onRow);
+      }
+    }
+  }
+}
+
+/// One row of a report table.
+component ReportTableRow(ExploreRow row, ExploreResult result, ReportSource? source, string cols, int index,
+                         Action<int>? onRow) {
+  variants {
+    base { Transition = "background-color 120ms ease"; Hover { Bg = Colors.Muted; } }
+  }
+  action Open() { if (onRow != null) { onRow(index); } }
+  render {
+    // A row that opens is pressed as a whole, and says what it opens — "Show the rows of Billing".
+    if (onRow != null) {
+      Pressable(onClick: Open, w: "100%", minW: "fit-content",
+                label: "Show the rows of " + CellText(row.Cells[0], result.Columns[0].Kind, FormatOf(result.Columns[0], source))) {
+        ReportTableCells(row, result, source, cols);
+      }
+    } else {
+      ReportTableCells(row, result, source, cols);
+    }
+  }
+}
+
+/// A row's cells, in the table's columns.
+component ReportTableCells(ExploreRow row, ExploreResult result, ReportSource? source, string cols) {
+  render {
+    Box(display: Display.Grid, cols: cols, gap: 3, px: 3, py: 2, minW: "fit-content", borderBW: 1, border: Colors.Border,
+        role: UiRole.GridRow) {
+      foreach (var j in Enumerable.Range(0, result.Columns.Count)) {
+        var c = result.Columns[j];
+        if (c.IsMeasure) {
+          Text(CellText(row.Cells[j], c.Kind, FormatOf(c, source)), fontSize: FontSize.Label,
+               fontVariant: FontVariant.TabularNums, textAlign: TextAlign.End, whiteSpace: WhiteSpace.Nowrap,
+               color: row.Cells[j].Empty ? Colors.TextMuted : Colors.OnSurface, role: UiRole.GridCell);
+        } else {
+          Text(CellText(row.Cells[j], c.Kind, FormatOf(c, source)), fontSize: FontSize.Body,
+               fontWeight: j == 0 ? FontWeight.Medium : FontWeight.Regular, minW: "0", overflow: Overflow.Hidden,
+               textOverflow: TextOverflow.Ellipsis, whiteSpace: WhiteSpace.Nowrap,
+               color: row.Cells[j].Empty ? Colors.TextMuted : Colors.OnSurface, role: UiRole.GridCell);
+        }
+      }
+    }
+  }
+}
+
+/// The chart under a report: a trend when the first grouping is a date (columns for the first measure, a line for the
+/// second), bars for the first measure when it is a category — the twelve largest. Nothing when there is no grouping or
+/// no measure to draw.
+[Composable]
+public component ReportChart(ExploreResult result, ReportSource? source = null, int height = 220, string title = "",
+                             TimeBucket bucket = TimeBucket.Day) {
+  live var keyAt = result.Columns.FindIndex(c => !c.IsMeasure);
+  live var plotted = result.Columns.Where(c => c.IsMeasure && c.Kind != FieldKind.Date).ToList();
+  live var m0 = plotted.Count > 0 ? result.Columns.FindIndex(c => c.Name == plotted[0].Name) : -1;
+  live var m1 = plotted.Count > 1 ? result.Columns.FindIndex(c => c.Name == plotted[1].Name) : -1;
+  live var isTrend = keyAt >= 0 && result.Columns[keyAt].Kind == FieldKind.Date;
+  live var rows = isTrend ? result.Rows : result.Rows.Take(12).ToList();
+  live var labels = isTrend ? BucketLabels(rows, keyAt, bucket) : LabelsOf(rows, result, keyAt);
+  live var first = SeriesOf(rows, m0);
+  live var second = SeriesOf(rows, m1);
+  render {
+    if (keyAt >= 0 && m0 >= 0 && rows.Count > 1) {
+      if (isTrend) {
+        Chart(title: title, labels: labels, height: height) {
+          // An AREA, not columns: a quiet day is the line on the floor, never a gap that reads as missing data — and
+          // ninety days stay legible on a phone, where ninety columns are hairlines.
+          Area(label: HeadingOf(plotted[0], source), values: first);
+          if (m1 >= 0 && SameScale(plotted[0], plotted[1], source)) {
+            Line(label: HeadingOf(plotted[1], source), values: second);
+          }
+          Axis(side: AxisSide.Left, ticks: 4);
+        }
+      } else {
+        Chart(title: title, labels: labels, height: Math.Max(height, rows.Count * 30 + 40), showValues: true) {
+          Bar(label: HeadingOf(plotted[0], source), values: first);
+          Axis(side: AxisSide.Bottom, ticks: 4);
+        }
+      }
+    }
+  }
+}
+
+/// A trend's labels, as short as the bucket allows — "14:00", "3 Sep", "Sep 2026", "Q3 2026", "2026".
+public string[] BucketLabels(List<ExploreRow> rows, int keyAt, TimeBucket bucket) {
+  List<string> labels = [];
+  foreach (var r in rows) {
+    var at = r.Cells[keyAt].Instant;
+    if (at == null) { labels.Add("–"); continue; }
+    var t = at!.Value;
+    if (bucket == TimeBucket.Hour) { labels.Add($"{t:HH:mm}"); }
+    else if (bucket == TimeBucket.Month) { labels.Add($"{t:MMM yyyy}"); }
+    else if (bucket == TimeBucket.Quarter) { labels.Add($"Q{(t.Month - 1) / 3 + 1} {t:yyyy}"); }
+    else if (bucket == TimeBucket.Year) { labels.Add($"{t:yyyy}"); }
+    else { labels.Add($"{t:d MMM}"); }
+  }
+  return labels.ToArray();
+}
+
+/// The words under each point of a chart — the grouping's cell, as the table writes it.
+public string[] LabelsOf(List<ExploreRow> rows, ExploreResult result, int keyAt) {
+  List<string> labels = [];
+  foreach (var r in rows) { labels.Add(keyAt < 0 ? "" : CellText(r.Cells[keyAt], result.Columns[keyAt].Kind, FigureFormat.Date)); }
+  return labels.ToArray();
+}
+
+/// One measure's values down the rows, as a chart plots them.
+public double[] SeriesOf(List<ExploreRow> rows, int at) {
+  List<double> values = [];
+  if (at < 0) { return values.ToArray(); }
+  foreach (var r in rows) { values.Add(ChartValue(r.Cells[at])); }
+  return values.ToArray();
+}
+
+/// A cell as a chart plots it — a number, or a duration in hours. An empty cell is zero on the chart and "–" in the table.
+public double ChartValue(ExploreCell c) {
+  if (c.Number != null) { return Convert.ToDouble(c.Number!.Value); }
+  if (c.Span != null) { return c.Span!.Value.TotalHours; }
+  return 0.0;
+}
+
+/// Two measures share a chart only when they are read alike — counts with counts, durations with durations — or one
+/// would flatten the other.
+bool SameScale(ExploreColumn a, ExploreColumn b, ReportSource? source) {
+  return FormatOf(a, source) == FormatOf(b, source);
+}
+
+/// One headline figure — its label, its value large in the mono face, a line on what it counts, and its change against
+/// the period before: in the success colour when it is good news, the danger colour when it is bad, quiet when flat.
+public component ReportFigure(string label, string value, string hint = "", string change = "", bool good = true,
+                              bool last = false, bool flat = false, Action? onOpen = null) {
+  render {
+    Stack(gap: 1, px: 4, py: 3, borderLW: 1, borderTW: 1, border: Colors.Border, role: UiRole.Group, label: label + ": " + value) {
+      Text(label, fontSize: FontSize.Caption, fontWeight: FontWeight.Medium, color: Colors.TextSecondary, whiteSpace: WhiteSpace.Nowrap);
+      Text(value, fontSize: FontSize.Heading, fontWeight: FontWeight.Medium,
+           fontVariant: FontVariant.TabularNums, letterSpacing: "-0.02em", whiteSpace: WhiteSpace.Nowrap);
+      if (change != "") {
+        Text(change, fontSize: FontSize.Caption, fontVariant: FontVariant.TabularNums,
+             color: flat ? Colors.TextMuted : (good ? Colors.Success : Colors.Danger));
+      }
+      if (hint != "") { Text(hint, fontSize: FontSize.Caption, color: Colors.TextMuted); }
+      // A figure that opens the rows it counts says so under it.
+      if (onOpen != null) {
+        Row() { Button("Show the rows", onPress: onOpen!, size: Size.Sm, tone: Tone.Ghost, announceAs: "Show the rows behind " + label); }
+      }
+    }
+  }
+}
+
+/// A row of headline figures, read across — balanced lines, two to a line on a phone. Each figure draws the hairline
+/// BEFORE it and ABOVE it, and the grid reaches 1px past the card on those sides, so the first column's and the first
+/// line's rules fall under the card's border — and the space after a short last line carries no rule at all.
+[Composable]
+public component ReportFigures(string label = "Figures", int count = 0) {
+  render {
+    // As many to a line as fit at 176px — and then BALANCED: seven figures where five fit are four and three, never
+    // five and two. (Layout.Width is this component's own width: it is a render root.)
+    var fit = Math.Max(1, Convert.ToInt(Math.Floor((Layout.Width ?? 1000.0) / 176.0)));
+    var rows = count <= 0 ? 1 : (count + fit - 1) / fit;
+    var cols = count <= 0 ? fit : (count + rows - 1) / rows;
+    Box(w: "100%", bg: Colors.Surface, rounded: Radius.Lg, borderW: 1, border: Colors.Border, overflow: Overflow.Hidden) {
+      Box(display: Display.Grid, cols: $"repeat({cols}, minmax(0, 1fr))", gap: 0, ml: "-1px", mt: "-1px",
+          role: UiRole.List, label: label) {
+        Slot;
+      }
+    }
+  }
+}
+
+/// What a report says when it has nothing to show: why it could not run, that the period holds nothing, or that it
+/// was cut at its limit.
+public component ReportStatus(ExploreResult? result, string nouns = "rows", bool loading = false) {
+  render {
+    if (loading || result == null) {
+      Stack(gap: 3, p: 4, w: "100%", label: "Loading the report") { SkeletonText(); SkeletonText(); SkeletonText(); }
+    } else if (result!.Problem != "") {
+      Alert(result!.Problem, title: "This report could not run", tone: Tone.Danger);
+    } else if (result!.Rows.Count == 0) {
+      EmptyState("Nothing here yet", body: $"No {nouns} in this period match. Widen the period, or take a filter off.") {
+        slot icon { Icon(Icons.Chart, size: 28, color: Colors.TextMuted); }
+      }
+    } else if (result!.Truncated) {
+      Text($"Showing the first {result!.Rows.Count} groups. Add a filter or a coarser grouping to see them all.",
+           fontSize: FontSize.Label, color: Colors.TextSecondary, role: UiRole.Status);
+    }
+  }
+}

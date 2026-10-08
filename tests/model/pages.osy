@@ -1,0 +1,34 @@
+namespace ReportsKitTests;
+
+using Osysharp.Reports;
+
+// The roastery's one page: its orders report, the kit's builder over the `orders` source. Saved reports open by their
+// id (`/reports/{id}`); the clock its days are counted on is `Osysharp.Clock`'s settings page (`/settings/clock`).
+
+[Title("Orders report")]
+[Page("/reports")]
+[Authorize(ReadsReports)]
+[Render(CSR)]
+component OrdersReport() {
+  render { ReportBuilder(OrderSource()); }
+}
+
+[Title("Orders overview")]
+[Page("/overview")]
+[Authorize(ReadsReports)]
+[Render(CSR)]
+component OrdersOverview() {
+  render {
+    var o = TheOrderReport();
+    ReportOverview(o.Source, [o.Orders, o.Value, o.ShippedShare, o.TimeToShip], now: [o.Waiting],
+                   columns: [o.Orders, o.Kilos, o.Value, o.TimeToShip], build: "/reports");
+  }
+}
+
+[Title("Orders report")]
+[Page("/reports/{id}")]
+[Authorize(ReadsReports)]
+[Render(CSR)]
+component SavedOrdersReport(Guid id) {
+  render { ReportBuilder(OrderSource(), open: id); }
+}

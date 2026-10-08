@@ -1,0 +1,144 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Identity;
+using Osysharp.Explore;
+
+// ── running a report ──────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚑ AS THE READER, ALWAYS. These run as whoever calls them; the platform compiles the query under their read rules, so
+//   two people opening one shared report each see their own rows (SECURITY-INVARIANT reports-run-as-the-viewer).
+// ⚑ ONLY OVER WHAT THE APP REPORTS ON. A query names one of the app's `ReportSource` roots, or it is refused — a page
+//   cannot point the builder at an entity the app never offered for reporting.
+
+/// The fields a reader may reach from the source filed under `key` — the app's curated groupings and measures come
+/// first in the builder; these are everything else, from the model, as this reader may read it.
+[Authorize(ReadsReports)]
+public List<ExploreField> ReportFields(string key, int depth = 3) {
+  var source = ReportSourceOrNull(key);
+  if (source == null) { return []; }
+  return Explore.Fields(source.Root, depth, ReportPivots());
+}
+
+/// Runs `query`, which must start from one of the app's sources. The answer is aggregated rows — never more than the
+/// query's limit — or a sentence saying why it could not run.
+[Authorize(ReadsReports)]
+public ExploreResult RunReport(ExploreQuery query) {
+  if (SourceForRoot(query.Root) == null) {
+    return new ExploreResult { Problem = "This app does not report on that. Choose one of its reports." };
+  }
+  // The app's own rows read as columns — never the page's: what a path through a keyed collection means is the app's.
+  var q = JsonSerializer.Deserialize<ExploreQuery>(JsonSerializer.Serialize(query));
+  q.Pivots = ReportPivots();
+  return Explore.Run(q);
+}
+
+// ── reading a value ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// A value as the table, the figures and the CSV all show it — ONE place, so an export says what the screen says.
+public string CellText(ExploreCell cell, FieldKind kind, FigureFormat format) {
+  if (cell.Empty) { return cell.Text != "" ? cell.Text : "–"; }
+  if (cell.Span != null) { return DurationWords(cell.Span!.Value); }
+  if (cell.Number != null) { return NumberWords(cell.Number!.Value, format); }
+  if (cell.Instant != null) { return $"{cell.Instant!.Value:d MMM yyyy}"; }
+  if (cell.Flag != null) { return cell.Flag!.Value ? "Yes" : "No"; }
+  // Nothing at all — a share of nothing, a value never given — reads as the empty cell does, never as a blank.
+  return cell.Text != "" ? cell.Text : "–";
+}
+
+/// A number as a figure reads it — 1,204 · 4.25 · 93.2%.
+public string NumberWords(decimal n, FigureFormat format) {
+  if (format == FigureFormat.Percent) { return Math.Round(n * 100m, 1).ToString("0.#") + "%"; }
+  if (format == FigureFormat.Count) { return Math.Round(n, 0).ToString("N0"); }
+  return Math.Round(n, 2).ToString("#,0.##");
+}
+
+/// A duration as a person reads it — "45 min", "3 h 20 min", "2 d 4 h". Minutes are the finest step a report shows.
+public string DurationWords(TimeSpan d) {
+  var sign = d < TimeSpan.Zero ? "−" : "";
+  var a = d < TimeSpan.Zero ? TimeSpan.Zero - d : d;
+  var minutes = (int)Math.Round(a.TotalMinutes);
+  if (minutes < 60) { return sign + $"{minutes} min"; }
+  var hours = minutes / 60;
+  if (hours < 48) {
+    var rest = minutes % 60;
+    return rest == 0 ? sign + $"{hours} h" : sign + $"{hours} h {rest} min";
+  }
+  var days = hours / 24;
+  var h = hours % 24;
+  return h == 0 ? sign + $"{days} d" : sign + $"{days} d {h} h";
+}
+
+/// How a result column reads: a measure by its source's format, a grouping by its kind.
+public FigureFormat FormatOf(ExploreColumn column, ReportSource? source) {
+  if (source != null) {
+    foreach (var m in source.Measures) { if (m.Measure.Name == column.Name) { return m.Format; } }
+  }
+  if (column.Kind == FieldKind.Duration) { return FigureFormat.Duration; }
+  if (column.Kind == FieldKind.Date) { return FigureFormat.Date; }
+  return column.IsMeasure ? FigureFormat.Number : FigureFormat.Count;
+}
+
+/// A column's heading — the source's words for a measure or a grouping, else the field's own label.
+public string HeadingOf(ExploreColumn column, ReportSource? source) {
+  if (source != null) {
+    foreach (var m in source.Measures) { if (m.Measure.Name == column.Name && m.Label != "") { return m.Label; } }
+    foreach (var d in source.Dimensions) { if (d.Field == column.Field && !column.IsMeasure && d.Label != "") { return d.Label; } }
+  }
+  return column.Label;
+}
+
+// ── a CSV that says what the screen says ──────────────────────────────────────────────────────────────────────────────
+
+/// The result as CSV — the headings the table shows and every cell as `CellText` writes it, so a spreadsheet holds what
+/// the screen showed, row for row. Byte-order mark, quoting and formula-safety are the Csv kit's.
+public string ReportCsv(ExploreResult result, ReportSource? source) {
+  List<string> head = [];
+  foreach (var c in result.Columns) { head.Add(HeadingOf(c, source)); }
+  List<List<string>> rows = [];
+  foreach (var r in result.Rows) {
+    List<string> line = [];
+    for (var i = 0; i < result.Columns.Count; i = i + 1) {
+      var c = result.Columns[i];
+      line.Add(CellText(r.Cells[i], c.Kind, FormatOf(c, source)));
+    }
+    rows.Add(line);
+  }
+  return WriteCsv(head, rows);
+}
+
+/// The CSV of `query` over the source filed under `key` for the period — run as the screen runs it (`RunSourceReport`:
+/// the same period on the same clock, the same zero-filled trend), so an export says what the page said. "" when the
+/// report cannot run.
+[Authorize(ReadsReports)]
+public string ReportCsvOf(string key, ExploreQuery query, PeriodPreset preset, DateOnly? first = null, DateOnly? last = null) {
+  var answer = RunSourceReport(key, query, preset, first, last);
+  if (answer.Result.Problem != "") { return ""; }
+  return ReportCsv(answer.Result, ReportSourceOrNull(key));
+}
+
+/// Keeps that CSV as a file and answers a link to download it that works for a few minutes. `name` is the file's name
+/// ("orders-by-region"). "" when the report cannot run.
+[Authorize(ReadsReports)]
+public string ReportCsvLink(string key, ExploreQuery query, PeriodPreset preset, string name, DateOnly? first = null,
+                            DateOnly? last = null) {
+  var csv = ReportCsvOf(key, query, preset, first, last);
+  if (csv == "") { return ""; }
+  var safe = SafeFileName(name == "" ? "report" : name);
+  var path = $"exports/reports/{safe}-{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")}.csv";
+  File.WriteAllText(path, csv);
+  return File.SignedUrl(path);
+}
+
+/// Letters, digits and dashes — a file name a person's words cannot break.
+string SafeFileName(string name) {
+  var lower = name.ToLower();
+  var allowed = "abcdefghijklmnopqrstuvwxyz0123456789";
+  var chars = new List<string>();
+  foreach (var ch in lower.ToCharArray()) {
+    var s = $"{ch}";
+    chars.Add(allowed.Contains(s) ? s : "-");
+  }
+  var joined = String.Join("", chars);
+  while (joined.Contains("--")) { joined = joined.Replace("--", "-"); }
+  return joined.Trim('-') == "" ? "report" : joined.Trim('-');
+}

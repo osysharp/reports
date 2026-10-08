@@ -1,0 +1,42 @@
+// THE CSV SAYS WHAT THE SCREEN SAYS — the headings the table shows, and every cell written by the same function the
+// table writes it with, row for row.
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+[Test(Roastery)]
+[runas(Olle)]
+void the_csv_is_the_table_row_for_row() {
+  var a = RunSourceReport("orders", Orders([Curated("orders"), Curated("value"), Curated("shipMedian")],
+                                           groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]),
+                          PeriodPreset.Last30Days);
+  var csv = ReadCsv(ReportCsv(a.Result, OrderSource()));
+  Assert.Equal(3, csv.Rows.Count);
+  // The headings are the source's words, as the table's header row shows them.
+  Assert.Equal("City", csv.Get(csv.Rows[0], "Region"));
+  Assert.Equal("3", csv.Get(csv.Rows[0], "Orders"));
+  Assert.Equal("4,580", csv.Get(csv.Rows[0], "Value"));
+  Assert.Equal("24 h", csv.Get(csv.Rows[0], "Time to ship"));
+  // …and every cell is the table's cell.
+  for (var i = 0; i < a.Result.Rows.Count; i = i + 1) {
+    var cells = RowText(a.Result, i).Split(" | ");
+    for (var j = 0; j < cells.Length; j = j + 1) {
+      Assert.Equal(cells[j], csv.Get(csv.Rows[i], HeadingOf(a.Result.Columns[j], OrderSource())));
+    }
+  }
+}
+
+// The EXPORT runs the screen's report — the same period on the same clock. Kiln & Cup's August order is outside the last
+// 30 days, so City holds three orders on the screen and in the file; an export of the bare query would say four.
+[Test(Roastery)]
+[runas(Olle)]
+void the_export_is_the_period_on_the_screen_not_all_time() {
+  var q = Orders([Curated("orders")], groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]);
+  var screen = RunSourceReport("orders", q, PeriodPreset.Last30Days);
+  var exported = ReportCsvOf("orders", q, PeriodPreset.Last30Days);
+  Assert.Equal(ReportCsv(screen.Result, OrderSource()), exported);
+  var csv = ReadCsv(exported);
+  Assert.Equal("City", csv.Get(csv.Rows[0], "Region"));
+  Assert.Equal("3", csv.Get(csv.Rows[0], "Orders"));
+  Assert.True(ReportCsvLink("orders", q, PeriodPreset.Last30Days, "Orders by region") != "");
+}

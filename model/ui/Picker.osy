@@ -1,0 +1,335 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Explore;
+
+// ── picking a field, and filtering on it ──────────────────────────────────────────────────────────────────────────────
+
+/// The fields a report can use, nearest first: the app's own groupings, then every field the reader may reach — its
+/// trail beside its name, searchable across the whole graph. A picked field opens what can be done with it.
+[Composable]
+public component FieldList(List<ExploreField> fields, ReportSource source, string search, string picked,
+                           Action<ExploreField> onPick, Action<ExploreField> onGroup,
+                           Action<ExploreField, MeasureKind, decimal> onMeasure, Action<ExploreField> onFilter) {
+  bool lists = false;
+  action ToggleLists() { lists = !lists; }
+  live var words = search.Trim().ToLower();
+  live var suggested = words == "" ? source.Dimensions.Select(d => FieldNamed(fields, d.Field)).Where(f => f != null).ToList() : [];
+  // Every field once: a suggested one is not listed a second time under "Every field".
+  // Nearest first: the root's own fields, then one relation away, then further; a field past a LIST (one per line,
+  // one per assignment) comes last of all, folded until asked for — it answers a different question.
+  live var matching = fields.Where(f => (words != "" || !source.Dimensions.Any(d => d.Field == f.Path))
+                                        && (words == "" || f.Label.ToLower().Contains(words) || TrailText(f).ToLower().Contains(words)
+                                            || FieldWord(source, f.Path, f.Label).ToLower().Contains(words)))
+                            .ToList();
+  live var shown = matching.Where(f => f.Through == "").OrderBy(f => f.Depth).Take(120).ToList();
+  live var listed = matching.Where(f => f.Through != "").OrderBy(f => f.Depth).Take(80).ToList();
+  render {
+    Stack(gap: 0, w: "100%", role: UiRole.List, label: "Fields") {
+      if (suggested.Count > 0) {
+        FieldHeading("Suggested");
+        foreach (var f in suggested) {
+          FieldRow(f!, source, picked == f!.Path, onPick, onGroup, onMeasure, onFilter,
+                   name: source.Dimensions.First(d => d.Field == f!.Path).Label);
+        }
+        FieldHeading("Every field");
+      }
+      if (shown.Count == 0 && listed.Count == 0) {
+        Text($"No field is called \"{search}\".", fontSize: FontSize.Label, color: Colors.TextMuted, px: 4, py: 3);
+      }
+      foreach (var f in shown) {
+        FieldRow(f, source, picked == f.Path, onPick, onGroup, onMeasure, onFilter);
+      }
+      if (listed.Count > 0) {
+        Pressable(onClick: ToggleLists, label: lists ? "Hide fields through lists" : $"Fields through lists ({listed.Count})",
+                  px: 4, py: 3, w: "100%", textAlign: TextAlign.Start, expanded: lists, display: Display.Flex, gap: 2,
+                  align: Align.Center) {
+          Icon(lists ? Icons.ChevronDown : Icons.ChevronRight, size: 14, color: Colors.TextMuted);
+          Text(lists ? "Fields through lists" : $"Fields through lists ({listed.Count})", fontSize: FontSize.Caption,
+               fontWeight: FontWeight.Semibold, color: Colors.TextMuted);
+        }
+        if (lists) {
+          foreach (var f in listed) {
+            FieldRow(f, source, picked == f.Path, onPick, onGroup, onMeasure, onFilter);
+          }
+        }
+      }
+    }
+  }
+}
+
+component FieldHeading(string text) {
+  render {
+    Text(text, fontSize: FontSize.Caption, fontWeight: FontWeight.Semibold, color: Colors.TextMuted, px: 4, pt: 4, pb: 1);
+  }
+}
+
+/// One field: its kind's glyph, its name, where it is — and, once picked, what can be done with it.
+internal component FieldRow(ExploreField f, ReportSource source, bool open, Action<ExploreField> onPick, Action<ExploreField> onGroup,
+                   Action<ExploreField, MeasureKind, decimal> onMeasure, Action<ExploreField> onFilter, string name = "") {
+
+  render {
+    var where = TrailIn(f, source);
+    var word = name != "" ? name : FieldWord(source, f.Path, f.Label);
+    var full = where == "" ? word : where + " › " + word;
+    Stack(gap: 0, w: "100%", bg: open ? Colors.Muted : Colors.Transparent, role: UiRole.ListItem, label: full) {
+      Pressable(onClick: () => onPick(f), label: full, w: "100%", px: 4, py: 2, textAlign: TextAlign.Start,
+                display: Display.Flex, gap: 3, align: Align.Center, expanded: open) {
+        Stack(w: "26px", h: "26px", shrink: 0, align: Align.Center, justify: Justify.Center, bg: Colors.Muted,
+              rounded: Radius.Sm, decorative: true) {
+          // What KIND of field, at a glance: a number, a date, a length of time, yes or no, a choice, a record, words.
+          if (f.Kind == FieldKind.Number) {
+            Text("#", fontSize: FontSize.Label, fontWeight: FontWeight.Semibold, color: Colors.TextSecondary);
+          } else if (f.Kind == FieldKind.Date) {
+            Icon(Icons.Calendar, size: 14, color: Colors.TextSecondary);
+          } else if (f.Kind == FieldKind.Duration) {
+            Icon(Icons.Timer, size: 14, color: Colors.TextSecondary);
+          } else if (f.Kind == FieldKind.Flag) {
+            Icon(Icons.CheckCircle, size: 14, color: Colors.TextSecondary);
+          } else if (f.Kind == FieldKind.Choice) {
+            Icon(Icons.Tag, size: 14, color: Colors.TextSecondary);
+          } else if (f.Kind == FieldKind.Reference) {
+            Icon(Icons.Link, size: 14, color: Colors.TextSecondary);
+          } else {
+            Text("Aa", fontSize: FontSize.Caption, fontWeight: FontWeight.Semibold, color: Colors.TextSecondary);
+          }
+        }
+        Stack(gap: 0, minW: "0", grow: 1) {
+          Text(word, fontSize: FontSize.Body, fontWeight: FontWeight.Medium, whiteSpace: WhiteSpace.Nowrap,
+               overflow: Overflow.Hidden, textOverflow: TextOverflow.Ellipsis);
+          if (where != "" || f.Through != "") {
+            Text(f.Through != "" ? $"{where} · one per {f.Through.ToLower()}" : where, fontSize: FontSize.Caption,
+                 color: Colors.TextMuted, whiteSpace: WhiteSpace.Nowrap, overflow: Overflow.Hidden, textOverflow: TextOverflow.Ellipsis);
+          }
+        }
+        if (f.Personal) { Badge("Personal", tone: Tone.Ghost); }
+      }
+      if (open) {
+        Row(gap: 2, wrap: Wrapping.Wrap, pl: 11, pr: 4, pb: 3, role: UiRole.Toolbar, label: $"What to do with {f.Label}") {
+          if (f.Kind != FieldKind.Duration) {
+            Button(f.Through != "" ? "Group, one row each" : "Group by", onPress: () => onGroup(f), size: Size.Sm, tone: Tone.Primary);
+          }
+          if (f.Through == "") {
+            if (f.Kind == FieldKind.Number) {
+              Button("Total", onPress: () => onMeasure(f, MeasureKind.Sum, 0.5m), size: Size.Sm);
+              Button("Average", onPress: () => onMeasure(f, MeasureKind.Average, 0.5m), size: Size.Sm);
+            }
+            if (f.Kind == FieldKind.Duration) {
+              Button("Average", onPress: () => onMeasure(f, MeasureKind.Average, 0.5m), size: Size.Sm);
+            }
+            if (f.Kind == FieldKind.Number || f.Kind == FieldKind.Duration) {
+              Button("Median", onPress: () => onMeasure(f, MeasureKind.Median, 0.5m), size: Size.Sm);
+              Button("90th percentile", onPress: () => onMeasure(f, MeasureKind.Percentile, 0.9m), size: Size.Sm);
+            }
+            if (f.Kind == FieldKind.Reference || f.Kind == FieldKind.Text || f.Kind == FieldKind.Choice) {
+              Button("Count different", onPress: () => onMeasure(f, MeasureKind.Distinct, 0.5m), size: Size.Sm);
+            }
+            if (f.Kind == FieldKind.Date) {
+              Button("Earliest", onPress: () => onMeasure(f, MeasureKind.Minimum, 0.5m), size: Size.Sm);
+              Button("Latest", onPress: () => onMeasure(f, MeasureKind.Maximum, 0.5m), size: Size.Sm);
+            }
+          }
+          Button("Filter", onPress: () => onFilter(f), size: Size.Sm);
+        }
+      }
+    }
+  }
+}
+
+/// THE FILTER EDITOR for one field — the comparison and the value as the field's kind wants them: a choice's members to
+/// tick, a record searched for by name, a date range, a number or duration with is / between / more than / less than,
+/// words with contains / starts with / is, yes or no — and "is empty" / "has a value" where a field can be empty. Across
+/// a collection it says what it means: any, none or all of them.
+[Composable]
+public component FilterEditor(string source, ExploreField field, ExploreFilter? existing, Action<ExploreFilter> onApply,
+                              Action onCancel) {
+  FilterOp op = FilterOp.Is;
+  CollectionUse through = CollectionUse.Any;
+  List<string> ticked = [];
+  List<string> tickedLabels = [];
+  string text = "";
+  decimal low = 0m;
+  decimal high = 0m;
+  TimeSpan lowSpan = TimeSpan.Zero;
+  TimeSpan highSpan = TimeSpan.Zero;
+  DateOnly? firstDay = null;
+  DateOnly? lastDay = null;
+  PeriodPreset datePreset = PeriodPreset.Last30Days;
+  bool yes = true;
+  string look = "";
+  List<ExploreChoice> found = [];
+  string problem = "";
+
+  on mount {
+    op = field.Kind == FieldKind.Choice || field.Kind == FieldKind.Reference ? FilterOp.IsAnyOf
+       : field.Kind == FieldKind.Text ? FilterOp.Contains
+       : field.Kind == FieldKind.Date ? FilterOp.Between
+       : field.Kind == FieldKind.Flag ? FilterOp.Is : FilterOp.AtLeast;
+    if (existing != null) {
+      op = existing!.Op;
+      through = existing!.Through;
+      ticked = existing!.Values.ToList();
+      tickedLabels = existing!.Labels.ToList();
+      if (existing!.Values.Length > 0) { text = existing!.Values[0]; }
+    }
+    if (field.Kind == FieldKind.Reference) { Look(); }
+  }
+
+  action Look() {
+    try { found = ReportChoices(source, field.Path, look); } catch (Exception ex) { problem = ex.Message; }
+  }
+  action Tick(string value, string label) {
+    if (ticked.Contains(value)) {
+      var at = ticked.IndexOf(value);
+      List<string> keptValues = [];
+      List<string> keptLabels = [];
+      for (var i = 0; i < ticked.Count; i = i + 1) {
+        if (i != at) { keptValues.Add(ticked[i]); keptLabels.Add(i < tickedLabels.Count ? tickedLabels[i] : ticked[i]); }
+      }
+      ticked = keptValues;
+      tickedLabels = keptLabels;
+    } else {
+      var next = ticked.ToList(); next.Add(value); ticked = next;
+      var nextLabels = tickedLabels.ToList(); nextLabels.Add(label); tickedLabels = nextLabels;
+    }
+  }
+  action Compare(FilterOp o) { op = o; }
+  action Over(CollectionUse u) { through = u; }
+  action Answer(bool b) { yes = b; }
+  action DatePeriod(PeriodPreset p) { datePreset = p; }
+
+  action Apply() {
+    problem = "";
+    var f = new ExploreFilter { Field = field.Path, Op = op, Through = through };
+    if (op == FilterOp.IsEmpty || op == FilterOp.HasValue) { onApply(f); return; }
+    if (field.Kind == FieldKind.Choice || field.Kind == FieldKind.Reference) {
+      if (ticked.Count == 0) { problem = field.Kind == FieldKind.Choice ? "Tick at least one." : "Pick at least one."; return; }
+      f.Op = FilterOp.IsAnyOf;
+      f.Values = ticked.ToArray();
+      f.Labels = tickedLabels.ToArray();
+    } else if (field.Kind == FieldKind.Flag) {
+      f.Op = FilterOp.Is;
+      f.Values = [yes ? "true" : "false"];
+      f.Labels = [yes ? "yes" : "no"];
+    } else if (field.Kind == FieldKind.Text) {
+      if (text.Trim() == "") { problem = "Type the words to look for."; return; }
+      f.Values = [text.Trim()];
+      f.Labels = [$"“{text.Trim()}”"];
+    } else if (field.Kind == FieldKind.Date) {
+      if (datePreset == PeriodPreset.Custom && (firstDay == null || lastDay == null)) { problem = "Choose the first and the last day."; return; }
+      f.Op = FilterOp.Between;
+      f.Values = DateFilterValues(datePreset, firstDay, lastDay);
+      f.Labels = datePreset == PeriodPreset.Custom ? [$"{firstDay:d MMM yyyy}", $"{lastDay:d MMM yyyy}"] : [];
+      if (datePreset != PeriodPreset.Custom) {
+        f.Op = FilterOp.Between;
+        f.Labels = [datePreset.Label.ToLower(), ""];
+      }
+    } else if (field.Kind == FieldKind.Duration) {
+      f.Values = op == FilterOp.Between ? [$"{lowSpan}", $"{highSpan}"] : [$"{lowSpan}"];
+      f.Labels = op == FilterOp.Between ? [DurationWords(lowSpan), DurationWords(highSpan)] : [DurationWords(lowSpan)];
+    } else {
+      f.Values = op == FilterOp.Between ? [$"{low}", $"{high}"] : [$"{low}"];
+      f.Labels = f.Values;
+    }
+    onApply(f);
+  }
+
+  render {
+    Stack(gap: 4, w: "100%", p: 4, bg: Colors.Surface, rounded: Radius.Lg, borderW: 1, border: Colors.Primary,
+          role: UiRole.Region, label: $"Filter {field.Label}") {
+      Stack(gap: 0) {
+        Text($"Only where {TrailWords(field).ToLower()}…", fontSize: FontSize.Subhead, fontWeight: FontWeight.Semibold);
+        Text(TrailText(field), fontSize: FontSize.Caption, color: Colors.TextMuted);
+      }
+      if (field.Through != "") {
+        Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: $"Which {field.Through.ToLower()}") {
+          foreach (var u in CollectionUse.Members) {
+            Tab(u.Label, selected: through == u, onPress: () => Over(u));
+          }
+        }
+      }
+      if (field.Kind == FieldKind.Choice) {
+        Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: "Values") {
+          foreach (var c in field.Choices) {
+            ChoiceTick(field.ChoiceLabels[field.Choices.IndexOf(c)], ticked.Contains(c),
+                       () => Tick(c, field.ChoiceLabels[field.Choices.IndexOf(c)]));
+          }
+        }
+      }
+      if (field.Kind == FieldKind.Reference) {
+        Row(gap: 2, align: Align.End, wrap: Wrapping.Wrap) {
+          Box(grow: 1, minW: "200px") { Field($"Find a {field.Label.ToLower()}", value: look, onEnter: Look, placeholder: "A name…"); }
+          Button("Search", onPress: Look, tone: Tone.Default);
+        }
+        Stack(gap: 1, maxH: "220px", overflowY: Overflow.Auto, role: UiRole.Group, label: "Records") {
+          if (found.Count == 0) { Text("Nothing by that name that you may read.", fontSize: FontSize.Label, color: Colors.TextMuted); }
+          foreach (var c in found) {
+            ChoiceTick(c.Text, ticked.Contains($"{c.Id}"), () => Tick($"{c.Id}", c.Text));
+          }
+        }
+      }
+      if (field.Kind == FieldKind.Flag) {
+        Tabs() {
+          Tab("Yes", selected: yes, onPress: () => Answer(true));
+          Tab("No", selected: !yes, onPress: () => Answer(false));
+        }
+      }
+      if (field.Kind == FieldKind.Text) {
+        Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: "Compare") {
+          foreach (var o in [FilterOp.Contains, FilterOp.StartsWith, FilterOp.Is]) { Tab(o.Label, selected: op == o, onPress: () => Compare(o)); }
+        }
+        Field("Words", value: text, onEnter: Apply);
+      }
+      if (field.Kind == FieldKind.Date) {
+        Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: "When") {
+          foreach (var p in [PeriodPreset.Today, PeriodPreset.ThisWeek, PeriodPreset.Last30Days, PeriodPreset.ThisQuarter, PeriodPreset.Custom]) {
+            Tab(p.Label, selected: datePreset == p, onPress: () => DatePeriod(p));
+          }
+        }
+        if (datePreset == PeriodPreset.Custom) {
+          Row(gap: 3, wrap: Wrapping.Wrap) {
+            DatePicker("From", value: firstDay);
+            DatePicker("To", value: lastDay);
+          }
+        }
+      }
+      if (field.Kind == FieldKind.Number || field.Kind == FieldKind.Duration) {
+        Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: "Compare") {
+          foreach (var o in [FilterOp.Is, FilterOp.Between, FilterOp.Above, FilterOp.Below]) { Tab(o.Label, selected: op == o, onPress: () => Compare(o)); }
+        }
+        Row(gap: 3, wrap: Wrapping.Wrap, align: Align.End) {
+          if (field.Kind == FieldKind.Number) {
+            DecimalField(op == FilterOp.Between ? "From" : "Value", value: low);
+            if (op == FilterOp.Between) { DecimalField("To", value: high); }
+          } else {
+            DurationField(op == FilterOp.Between ? "From" : "Length", value: lowSpan);
+            if (op == FilterOp.Between) { DurationField("To", value: highSpan); }
+          }
+        }
+      }
+      if (field.Kind != FieldKind.Flag) {
+        Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: "Empty or not") {
+          Tab("is empty", selected: op == FilterOp.IsEmpty, onPress: () => Compare(FilterOp.IsEmpty));
+          Tab("has a value", selected: op == FilterOp.HasValue, onPress: () => Compare(FilterOp.HasValue));
+        }
+      }
+      if (problem != "") { Text(problem, color: Colors.Danger, fontSize: FontSize.Label, role: UiRole.Alert); }
+      Row(gap: 2) {
+        Button("Apply filter", onPress: Apply, tone: Tone.Primary);
+        Button("Cancel", onPress: onCancel, tone: Tone.Ghost);
+      }
+    }
+  }
+}
+
+/// One value a filter can tick — a choice's member, a record — drawn as a pill that reads as ticked or not.
+component ChoiceTick(string label, bool on, Action onToggle) {
+  render {
+    Pressable(onClick: onToggle, label: label, role: UiRole.Checkbox, checked: on, display: Display.Flex, gap: 2,
+              align: Align.Center, px: 3, py: 1, rounded: Radius.Pill, borderW: 1,
+              border: on ? Colors.Primary : Colors.Border, bg: on ? Colors.Primary.Subtle : Colors.Surface,
+              color: on ? Colors.Primary.Strong : Colors.OnSurface) {
+      if (on) { Icon(Icons.Check, size: 14); }
+      Text(label, fontSize: FontSize.Label, fontWeight: on ? FontWeight.Medium : FontWeight.Regular, whiteSpace: WhiteSpace.Nowrap);
+    }
+  }
+}

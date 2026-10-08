@@ -1,0 +1,86 @@
+// CONDITION GROUPS AND CONDITIONS ON GROUPS — "all of" / "any of" trees, nested, compiled to one parenthesised SQL
+// condition; and "show groups where…", compiled to HAVING. Counted over the roastery's September (roastery.test.osy).
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+ExploreFilter Is(string field, string value) { return new ExploreFilter { Field = field, Op = FilterOp.Is, Values = [value] }; }
+
+[Test(Roastery)]
+[runas(Olle)]
+void all_of_with_a_nested_any_of() {
+  // Bike AND (more than 8 kg OR organic): of the bike orders o1 (10 kg, organic), o2 (5 kg) and o6 (4 kg), only o1.
+  var where = new ExploreFilterGroup { Match = FilterMatch.All, Filters = [Is("Courier", "Bike")],
+    Groups = [new ExploreFilterGroup { Match = FilterMatch.Any,
+      Filters = [new ExploreFilter { Field = "Kilos", Op = FilterOp.Above, Values = ["8"] }, Is("Organic", "true")] }] };
+  Assert.Equal(1, CountIn(where));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void any_of_at_the_top() {
+  // Freight OR cancelled: o3, o8.
+  Assert.Equal(2, CountIn(new ExploreFilterGroup { Match = FilterMatch.Any,
+    Filters = [Is("Courier", "Freight"), Is("Status", "Cancelled")] }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void any_of_holding_an_all_of() {
+  // The North (o1, o2) OR (organic AND more than 11 kg: o3, o5).
+  Assert.Equal(4, CountIn(new ExploreFilterGroup { Match = FilterMatch.Any,
+    Filters = [Is("Cafe.Region.Name", "North")],
+    Groups = [new ExploreFilterGroup { Match = FilterMatch.All,
+      Filters = [Is("Organic", "true"), new ExploreFilter { Field = "Kilos", Op = FilterOp.Above, Values = ["11"] }] }] }));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void an_empty_group_adds_no_condition() {
+  // Bike (o1, o2, o6), and an "any of" group with nothing in it yet — which neither narrows nor widens.
+  Assert.Equal(3, CountIn(new ExploreFilterGroup { Filters = [Is("Courier", "Bike")],
+                                                   Groups = [new ExploreFilterGroup { Match = FilterMatch.Any }] }));
+}
+
+[Test(Roastery)]
+void a_branch_naming_a_field_the_reader_cannot_read_refuses_the_report_instead_of_widening_it() {
+  runas (Ada) {
+    // Bike OR on the owner's price list: leaving the second branch out would answer "bike", a narrower OR's wider cousin.
+    var where = new ExploreFilterGroup { Match = FilterMatch.Any,
+      Filters = [Is("Courier", "Bike"), Is("Cafe.PriceList.Name", "Wholesale 2026")] };
+    var a = RunSourceReport("orders", Orders([Curated("orders")], where: where), PeriodPreset.Last30Days);
+    Assert.Equal(0, a.Result.Rows.Count);
+    Assert.Contains("Cafe.PriceList.Name", a.Result.Unreachable);
+  }
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void show_groups_where_a_count_is_more_than_a_number() {
+  // Regions with more than two orders: only the City (3).
+  var a = RunSourceReport("orders", Orders([Curated("orders")],
+                                           groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }],
+                                           having: [new ExploreHaving { Measure = "orders", Op = FilterOp.Above, Values = ["2"] }]),
+                          PeriodPreset.Last30Days);
+  Assert.Equal("City | 3", Rows(a.Result));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void show_groups_where_a_median_time_is_at_least_a_day() {
+  // Median time to ship: the North 15 h (24 h and 6 h), the Coast 48 h, the City 24 h. At least a day: the City and the Coast.
+  var a = RunSourceReport("orders", Orders([Curated("orders"), Curated("shipMedian")],
+                                           groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }],
+                                           having: [new ExploreHaving { Measure = "shipMedian", Op = FilterOp.AtLeast, Values = ["1.00:00:00"] }]),
+                          PeriodPreset.Last30Days);
+  Assert.Equal("City | 3 | 24 h\nCoast | 2 | 2 d", Rows(a.Result));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_tree_reads_back_as_one_sentence() {
+  var fields = OpenReportDesk("orders")!.Fields;
+  var where = new ExploreFilterGroup { Match = FilterMatch.All, Filters = [Is("Courier", "Bike")],
+    Groups = [new ExploreFilterGroup { Match = FilterMatch.Any, Filters = [Is("Organic", "true"), Is("Status", "Shipped")] }] };
+  Assert.Equal("Courier is Bike and (Organic is true or Status is Shipped)", GroupSentence(where, fields));
+}

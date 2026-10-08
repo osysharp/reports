@@ -1,0 +1,453 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Explore;
+using Osysharp.Charts;
+
+// ── the overview ──────────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// THE PAGE A TEAM OPENS EVERY MORNING: headline figures over a period with their change against the period before, how
+// the first of them moved, and a breakdown by any of the source's groupings — exportable, and a door into the builder
+// for every question the overview does not answer.
+//
+// ⚑ ONE OVERVIEW MAY READ SEVERAL SOURCES. A measure is named `"solved"` (the overview's own source) or
+//   `"promises:kept"` (another source's) — a support desk counts tickets on one root and promises kept on another. In
+//   the breakdown a second source joins on the grouping that has the SAME LABEL in it ("Agent" is the ticket's assignee
+//   in one and the promise's item's assignee in the other), matched by the record (or the words) each row is for. A
+//   source with no grouping of that name shows "–" in that column rather than a number for something else.
+// ⚑ ALL OF IT IS ONE SERVER CALL (`RunOverview`): every number is an aggregate query run as the reader, so two people
+//   opening it see each their own, and the page receives the figures and two small results — never the rows.
+
+/// The period presets as tabs — the overview's and the builder's.
+public component PeriodTabs(PeriodPreset preset, Action<PeriodPreset> onPeriod, Action<DateOnly, DateOnly>? onDates = null,
+                            DateOnly? first = null, DateOnly? last = null) {
+  // Two days somebody chooses — offered when the screen takes them (`onDates`). The first defaults to a month ago.
+  bool choosing = false;
+  DateOnly? from = first;
+  DateOnly? to = last;
+  string problem = "";
+  action Choose() {
+    choosing = !choosing;
+    problem = "";
+    if (from == null) { from = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-29); }
+    if (to == null) { to = DateOnly.FromDateTime(DateTime.UtcNow); }
+  }
+  action Apply() {
+    problem = "";
+    if (from == null || to == null) { problem = "Choose both days."; return; }
+    if (to!.Value < from!.Value) { problem = "The last day is before the first."; return; }
+    choosing = false;
+    onDates!(from!.Value, to!.Value);
+  }
+  render {
+    Stack(gap: 2, w: "100%") {
+      Box(overflowX: Overflow.Auto, w: "100%") {
+        Tabs() {
+          foreach (var p in PeriodPreset.Members.Where(m => m != PeriodPreset.Custom)) {
+            Tab(PresetShort(p), selected: p == preset, onPress: () => onPeriod(p));
+          }
+          if (onDates != null) { Tab("Dates…", selected: preset == PeriodPreset.Custom, onPress: Choose); }
+        }
+      }
+      if (choosing) {
+        Row(gap: 3, align: Align.End, wrap: Wrapping.Wrap, label: "Choose the dates") {
+          DatePicker("First day", value: from);
+          DatePicker("Last day", value: to);
+          Button("Show these days", onPress: Apply, tone: Tone.Primary);
+          if (problem != "") { Text(problem, fontSize: FontSize.Label, color: Colors.Danger); }
+        }
+      }
+    }
+  }
+}
+
+/// One headline figure, in words.
+public class OverviewFigure {
+  public string Label = "";
+  public string Value = "";
+  public string Hint = "";
+  public string Change = "";
+  public bool Good = true;
+  public bool Flat = false;
+}
+
+/// Everything an overview shows, for one period and one breakdown.
+public class OverviewAnswer {
+  public string Title = "";
+  public string Nouns = "rows";
+  public string Period = "";
+  public string PeriodBefore = "";
+  /// Why it could not run — "" when it ran.
+  public string Problem = "";
+  public List<OverviewFigure> Figures = [];
+  public ExploreResult? Trend;
+  public string TrendTitle = "";
+  public TimeBucket Bucket = TimeBucket.Day;
+  /// The groupings the breakdown can be by, in the source's words, and which one it is.
+  public List<string> Dimensions = [];
+  public int By = 0;
+  public ExploreResult Breakdown = new ExploreResult();
+  /// The breakdown's words and formats — the overview's source with every other source's measures in it, by their
+  /// `key:name`.
+  public ReportSource Words = new ReportSource();
+}
+
+/// The source a measure name belongs to — "promises:kept" is `promises`'; a bare name is `main`'s.
+public string SourceOfMeasure(string main, string spec) {
+  var colon = spec.IndexOf(":");
+  return colon < 0 ? main : spec.Substring(0, colon);
+}
+
+/// The measure's own name — "kept" in "promises:kept".
+public string NameOfMeasure(string spec) {
+  var colon = spec.IndexOf(":");
+  return colon < 0 ? spec : spec.Substring(colon + 1);
+}
+
+/// `source`'s measures named `names` (of those that are its own), with the parts any ratio among them is made of.
+List<ExploreMeasure> MeasuresNamed(ReportSource source, List<string> names) {
+  List<ExploreMeasure> chosen = [];
+  foreach (var n in names) {
+    var m = source.Measures.FirstOrDefault(x => x.Measure.Name == n);
+    if (m != null) { chosen.Add(m.Measure); }
+  }
+  return WithParts(chosen, source);
+}
+
+/// What a grouping's cell is FOR, across sources — the record it names, else its words.
+string KeyOfCell(ExploreCell cell) {
+  if (cell.Empty) { return "∅"; }
+  if (cell.Id != null) { return $"{cell.Id}"; }
+  if (cell.Flag != null) { return cell.Flag!.Value ? "yes" : "no"; }
+  return cell.Text;
+}
+
+/// THE OVERVIEW, computed: `figures` and `now` across the top, the trend of `trend` (default the first figure), and the
+/// breakdown of `columns` (default `figures`) by the source's grouping number `by` — for `preset` on the app's clock.
+/// What a measure is called inside an overview: its own name for the overview's source, `key:name` for another's.
+internal string SpecOf(string main, ReportMeasure m) {
+  return m.Source == "" || m.Source == main ? m.Measure.Name : $"{m.Source}:{m.Measure.Name}";
+}
+
+/// The measures, as the overview names them — each checked against the source it says it comes from, since what
+/// arrives here came from a page. "" when all are real; else the sentence that says which is not.
+string CheckedSpecs(string main, List<ReportMeasure> measures, List<string> into) {
+  foreach (var m in measures) {
+    var spec = SpecOf(main, m);
+    var key = SourceOfMeasure(main, spec);
+    var s = ReportSourceOrNull(key);
+    if (s == null) { return $"This app has no report called '{key}'."; }
+    if (!s.Measures.Any(x => x.Measure.Name == m.Measure.Name)) {
+      return $"'{m.Label}' is not one of the measures of {s.Title}.";
+    }
+    into.Add(spec);
+  }
+  return "";
+}
+
+/// THE OVERVIEW, computed — `figures` and `now` are the sources' own measures (typed references: `work.Solved`,
+/// `promises.KeptShare`), never names typed in a string.
+[Authorize(ReadsReports)]
+public OverviewAnswer RunOverview(string source, List<ReportMeasure> figures, List<ReportMeasure> now,
+                                  List<ReportMeasure> columns, ReportMeasure? trend, int by, PeriodPreset preset) {
+  List<string> f = [];
+  List<string> n = [];
+  List<string> c = [];
+  List<string> t = [];
+  var problem = CheckedSpecs(source, figures, f);
+  if (problem == "") { problem = CheckedSpecs(source, now, n); }
+  if (problem == "") { problem = CheckedSpecs(source, columns, c); }
+  if (problem == "" && trend != null) { problem = CheckedSpecs(source, [trend!], t); }
+  if (problem != "") { return new OverviewAnswer { Problem = problem }; }
+  return OverviewFor(source, f.ToArray(), n.ToArray(), c.ToArray(), t.Count > 0 ? t[0] : "", by, preset);
+}
+
+/// …the same, over measures named `key:name` — checked by the caller.
+OverviewAnswer OverviewFor(string source, string[] figures, string[] now, string[] columns, string trend, int by,
+                           PeriodPreset preset) {
+  var main = ReportSourceOrNull(source);
+  if (main == null) { return new OverviewAnswer { Problem = "This app has no report by that name." }; }
+  var answer = new OverviewAnswer { Title = main.Title, Nouns = main.Nouns,
+                                    Dimensions = main.Dimensions.Select(d => d.Label).ToList(),
+                                    By = main.Dimensions.Count == 0 ? 0 : Math.Max(0, Math.Min(by, main.Dimensions.Count - 1)) };
+  answer.Words = OverviewWords(main, figures.Concat(now).Concat(columns).ToArray());
+
+  // The figures — ONE query per source (all its figures at once), with the period before for the change.
+  Dictionary<string, ReportAnswer> ran = [];
+  foreach (var key in figures.Select(f => SourceOfMeasure(source, f)).Distinct().ToList()) {
+    var s = ReportSourceOrNull(key);
+    if (s == null) { answer.Problem = $"This app has no report called '{key}'."; return answer; }
+    var mine = figures.Where(f => SourceOfMeasure(source, f) == key).Select(f => NameOfMeasure(f)).ToList();
+    var a = RunSourceReport(key, new ExploreQuery { Root = s.Root, Measures = MeasuresNamed(s, mine) }, preset, compare: true);
+    if (a.Result.Problem != "") { answer.Problem = a.Result.Problem; return answer; }
+    ran[key] = a;
+    if (key == source || answer.Period == "") { answer.Period = a.Period; answer.PeriodBefore = a.PeriodBefore; }
+  }
+  foreach (var spec in figures) {
+    var key = SourceOfMeasure(source, spec);
+    var s = ReportSourceOrNull(key)!;
+    var a = ran[key];
+    var c = a.Result.Columns.FirstOrDefault(x => x.Name == NameOfMeasure(spec));
+    if (c == null || a.Result.Rows.Count == 0) { continue; }
+    var at = a.Result.Columns.FindIndex(x => x.Name == c.Name);
+    answer.Figures.Add(new OverviewFigure { Label = HeadingOf(c, s), Value = CellText(a.Result.Rows[0].Cells[at], c.Kind, FormatOf(c, s)),
+                                            Hint = HintOf(c, s), Change = ChangeWords(a, c, s), Good = ChangeIsGood(a, c, s),
+                                            Flat = ChangeIsFlat(a, c) });
+  }
+  // …and those counted as things stand.
+  foreach (var spec in now) {
+    var key = SourceOfMeasure(source, spec);
+    var s = ReportSourceOrNull(key);
+    if (s == null) { continue; }
+    var r = RunSourceNow(key, new ExploreQuery { Root = s.Root, Measures = MeasuresNamed(s, [NameOfMeasure(spec)]) });
+    var c = r.Columns.FirstOrDefault(x => x.Name == NameOfMeasure(spec));
+    if (r.Problem != "" || c == null || r.Rows.Count == 0) { continue; }
+    answer.Figures.Add(new OverviewFigure { Label = HeadingOf(c, s), Hint = HintOf(c, s),
+                                            Value = CellText(r.Rows[0].Cells[r.Columns.FindIndex(x => x.Name == c.Name)], c.Kind, FormatOf(c, s)) });
+  }
+
+  // The trend.
+  var followed = trend != "" ? trend : (figures.Length > 0 ? figures[0] : "");
+  var trendKey = SourceOfMeasure(source, followed);
+  var ts = ReportSourceOrNull(trendKey);
+  if (followed != "" && ts != null && ts.Date != "") {
+    var t = RunSourceReport(trendKey, new ExploreQuery { Root = ts.Root, Measures = MeasuresNamed(ts, [NameOfMeasure(followed)]),
+                                                         GroupBy = [new ExploreGroup { Field = ts.Date }] }, preset);
+    if (t.Result.Problem == "") {
+      answer.Trend = t.Result;
+      answer.Bucket = t.Bucket;
+      var tc = t.Result.Columns.FirstOrDefault(x => x.IsMeasure);
+      answer.TrendTitle = TrendWords(tc == null ? ts.Title : HeadingOf(tc, ts), t.Bucket);
+    }
+  }
+
+  answer.Breakdown = OverviewBreakdown(main, columns.Length > 0 ? columns : figures, answer.By, preset, 50);
+  return answer;
+}
+
+/// "Tickets per day" — said whole, in the reader's language: the bucket's word is a word of its own, never an enum's
+/// name.
+public string TrendWords(string what, TimeBucket bucket) {
+  if (bucket == TimeBucket.Hour) { return Translate($"{what} per hour", key: "report-trend-hour"); }
+  if (bucket == TimeBucket.Week) { return Translate($"{what} per week", key: "report-trend-week"); }
+  if (bucket == TimeBucket.Month) { return Translate($"{what} per month", key: "report-trend-month"); }
+  if (bucket == TimeBucket.Quarter) { return Translate($"{what} per quarter", key: "report-trend-quarter"); }
+  if (bucket == TimeBucket.Year) { return Translate($"{what} per year", key: "report-trend-year"); }
+  return Translate($"{what} per day", key: "report-trend-day");
+}
+
+/// The overview's words: its own source, with every other source's measures it names added under `key:name`.
+ReportSource OverviewWords(ReportSource main, string[] specs) {
+  var words = new ReportSource { Key = main.Key, Title = main.Title, Root = main.Root, Noun = main.Noun, Nouns = main.Nouns,
+                                 Date = main.Date, Dimensions = main.Dimensions, Measures = main.Measures.ToList() };
+  foreach (var spec in specs.Where(x => x.Contains(":")).Distinct().ToList()) {
+    var s = ReportSourceOrNull(SourceOfMeasure(main.Key, spec));
+    var m = s == null ? null : s.Measures.FirstOrDefault(x => x.Measure.Name == NameOfMeasure(spec));
+    if (m == null) { continue; }
+    words.Measures.Add(new ReportMeasure { Label = m.Label, Hint = m.Hint, Format = m.Format, HigherIsBetter = m.HigherIsBetter,
+                                           Measure = new ExploreMeasure { Name = spec } });
+  }
+  return words;
+}
+
+/// The breakdown by `main`'s grouping number `by`: its own measures from one grouped query, and each other source's
+/// from a query grouped by ITS grouping of the same name, joined on the record (or words) each row is for.
+ExploreResult OverviewBreakdown(ReportSource main, string[] columns, int by, PeriodPreset preset, int limit) {
+  if (main.Dimensions.Count == 0) { return new ExploreResult(); }
+  var dim = main.Dimensions[by];
+  var own = columns.Where(c => SourceOfMeasure(main.Key, c) == main.Key).Select(c => NameOfMeasure(c)).ToList();
+  var first = own.Count > 0 ? own[0] : "";
+  var a = RunSourceReport(main.Key, new ExploreQuery { Root = main.Root, Measures = MeasuresNamed(main, own), Limit = limit,
+                                                       GroupBy = [new ExploreGroup { Field = dim.Field }], SortBy = first,
+                                                       Descending = true }, preset);
+  if (a.Result.Problem != "") { return a.Result; }
+  var merged = new ExploreResult { Truncated = a.Result.Truncated };
+  merged.Columns.Add(a.Result.Columns[0]);
+  // The other sources' answers, each as key → cells.
+  Dictionary<string, ExploreResult> others = [];
+  foreach (var key in columns.Select(c => SourceOfMeasure(main.Key, c)).Where(k => k != main.Key).Distinct().ToList()) {
+    var s = ReportSourceOrNull(key);
+    var same = s == null ? null : s.Dimensions.FirstOrDefault(d => d.Label == dim.Label);
+    if (s == null || same == null) { continue; }
+    var names = columns.Where(c => SourceOfMeasure(main.Key, c) == key).Select(c => NameOfMeasure(c)).ToList();
+    var o = RunSourceReport(key, new ExploreQuery { Root = s.Root, Measures = MeasuresNamed(s, names), Limit = 5000,
+                                                    GroupBy = [new ExploreGroup { Field = same.Field }] }, preset);
+    if (o.Result.Problem == "") { others[key] = o.Result; }
+  }
+  foreach (var spec in columns) {
+    var key = SourceOfMeasure(main.Key, spec);
+    var name = NameOfMeasure(spec);
+    var from = key == main.Key ? a.Result : (others.ContainsKey(key) ? others[key] : null);
+    var c = from == null ? null : from.Columns.FirstOrDefault(x => x.Name == name);
+    merged.Columns.Add(new ExploreColumn { Name = spec, Label = c == null ? name : c.Label, IsMeasure = true,
+                                           Kind = c == null ? FieldKind.Number : c.Kind });
+  }
+  foreach (var row in a.Result.Rows) {
+    var key0 = KeyOfCell(row.Cells[0]);
+    List<ExploreCell> cells = [row.Cells[0]];
+    foreach (var spec in columns) {
+      var key = SourceOfMeasure(main.Key, spec);
+      var name = NameOfMeasure(spec);
+      var from = key == main.Key ? a.Result : (others.ContainsKey(key) ? others[key] : null);
+      var at = from == null ? -1 : from.Columns.FindIndex(x => x.Name == name);
+      if (from == null || at < 0) { cells.Add(new ExploreCell { Empty = true }); continue; }
+      if (key == main.Key) { cells.Add(row.Cells[at]); continue; }
+      var match = from.Rows.FirstOrDefault(r => KeyOfCell(r.Cells[0]) == key0);
+      cells.Add(match == null ? new ExploreCell { Empty = true } : match.Cells[at]);
+    }
+    merged.Rows.Add(new ExploreRow { Cells = cells });
+  }
+  return merged;
+}
+
+/// The breakdown as a CSV file, run again as the reader — what the screen showed — and a link to download it.
+[Authorize(ReadsReports)]
+public string OverviewCsvLink(string source, List<ReportMeasure> figures, List<ReportMeasure> columns, int by,
+                              PeriodPreset preset) {
+  var main = ReportSourceOrNull(source);
+  if (main == null || main.Dimensions.Count == 0) { return ""; }
+  var at = Math.Max(0, Math.Min(by, main.Dimensions.Count - 1));
+  List<string> named = [];
+  if (CheckedSpecs(source, columns.Count > 0 ? columns : figures, named) != "") { return ""; }
+  var cols = named.ToArray();
+  var result = OverviewBreakdown(main, cols, at, preset, 5000);
+  if (result.Problem != "") { return ""; }
+  var csv = ReportCsv(result, OverviewWords(main, cols));
+  var path = $"exports/reports/{SafeFileName($"{main.Title} by {main.Dimensions[at].Label}")}-{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")}.csv";
+  File.WriteAllText(path, csv);
+  return File.SignedUrl(path);
+}
+
+/// THE OVERVIEW of the source filed under `source`.
+/// `figures`: measures shown across the top — the sources' own, by typed reference (`work.Solved`, or
+/// `promises.KeptShare` from another source, which joins the breakdown on the grouping of the same name), each with its
+/// change against the period before. `now`: measures counted as things stand rather than over the period (an open
+/// backlog). `columns`: the breakdown's measures (default: `figures`). `trend`: the measure the chart follows (default:
+/// the first figure). `build`: where "Build a report" goes — the app's builder page; "" shows no link.
+[Composable]
+public component ReportOverview(ReportSource source, List<ReportMeasure> figures, List<ReportMeasure> now = [],
+                                List<ReportMeasure> columns = [], ReportMeasure? trend = null, string build = "",
+                                string title = "") {
+  OverviewAnswer? answer = null;
+  PeriodPreset preset = PeriodPreset.Last30Days;
+  int by = 0;
+  bool loading = true;
+  string problem = "";
+  string csv = "";
+
+  on mount { Refresh(); }
+
+  action Refresh() {
+    loading = true;
+    csv = "";
+    problem = "";
+    try { answer = RunOverview(source.Key, figures, now, columns, trend, by, preset); } catch (Exception ex) { problem = ex.Message; }
+    loading = false;
+  }
+  action Period(PeriodPreset p) { preset = p; Refresh(); }
+  action By(int i) { by = i; Refresh(); }
+  action Export() {
+    csv = OverviewCsvLink(source.Key, figures, columns, by, preset);
+    if (csv == "") { problem = "The export could not be made. Try again in a moment."; }
+  }
+
+  render {
+    Stack(gap: 0, w: "100%", minH: "100%", bg: Colors.Bg, label: title != "" ? title : (answer == null ? "Overview" : answer!.Title)) {
+      Stack(gap: 3, px: Layout.AtLeast(Tablet) ? 6 : 4, pt: 5, pb: 3, borderBW: 1, border: Colors.Border) {
+        Row(gap: 3, align: Align.Center, wrap: Wrapping.Wrap) {
+          Stack(gap: 0, grow: 1, minW: "0") {
+            Text(title != "" ? title : (answer == null ? "" : answer!.Title), fontSize: FontSize.Title, fontWeight: FontWeight.Semibold,
+                 letterSpacing: "-0.02em");
+            if (answer != null && answer!.Period != "") {
+              Text(answer!.PeriodBefore != "" ? $"{answer!.Period} · against {answer!.PeriodBefore}" : answer!.Period,
+                   fontSize: FontSize.Caption, color: Colors.TextMuted, fontVariant: FontVariant.TabularNums);
+            }
+          }
+          if (build != "") {
+            Link(href: build, label: "Build a report", px: 4, py: 2, rounded: Radius.Md, borderW: 1, border: Colors.Border,
+                 bg: Colors.Surface, color: Colors.OnSurface, shrink: 0) {
+              Text("Build a report", fontWeight: FontWeight.Medium, fontSize: FontSize.Label, whiteSpace: WhiteSpace.Nowrap);
+            }
+          }
+        }
+        PeriodTabs(preset, Period);
+      }
+      Stack(gap: 5, w: "100%", p: Layout.AtLeast(Tablet) ? 6 : 4) {
+        if (problem != "") { Alert(problem, tone: Tone.Danger); }
+        if (loading && answer == null) {
+          Stack(gap: 3, w: "100%", label: "Loading the overview") { SkeletonText(); SkeletonText(); SkeletonText(); }
+        }
+        if (answer != null) {
+          if (answer!.Problem != "") {
+            Alert(answer!.Problem, title: "This overview could not run", tone: Tone.Danger);
+          } else {
+            ReportFigures(label: "Figures", count: answer!.Figures.Count) {
+              foreach (var f in answer!.Figures) {
+                ReportFigure(f.Label, f.Value, hint: f.Hint, change: f.Change, good: f.Good, flat: f.Flat);
+              }
+            }
+            if (answer!.Trend != null) {
+              if (Quiet(answer!.Trend!)) {
+                OverviewCard(answer!.TrendTitle) {
+                  Text($"No {answer!.Nouns} in this period.", fontSize: FontSize.Label, color: Colors.TextMuted, py: 6,
+                       textAlign: TextAlign.Center, w: "100%");
+                }
+              } else {
+                ReportChart(answer!.Trend!, answer!.Words, height: 200, title: answer!.TrendTitle, bucket: answer!.Bucket);
+              }
+            }
+            if (answer!.Dimensions.Count > 0) {
+              OverviewCard("Breakdown") {
+                Row(gap: 3, align: Align.Center, wrap: Wrapping.Wrap, px: 4, pb: 2, w: "100%") {
+                  Box(grow: 1, minW: "0", overflowX: Overflow.Auto) {
+                    Tabs() {
+                      foreach (var i in Enumerable.Range(0, answer!.Dimensions.Count)) {
+                        Tab(answer!.Dimensions[i], selected: i == answer!.By, onPress: () => By(i));
+                      }
+                    }
+                  }
+                  if (csv != "") {
+                    Link(href: csv, label: "Download the CSV", color: Colors.Primary) {
+                      Text("Download CSV", fontWeight: FontWeight.Medium, fontSize: FontSize.Label, whiteSpace: WhiteSpace.Nowrap);
+                    }
+                  } else if (answer!.Breakdown.Problem == "" && answer!.Breakdown.Rows.Count > 0) {
+                    Button("Export CSV", onPress: Export, size: Size.Sm);
+                  }
+                }
+                if (answer!.Breakdown.Problem == "" && answer!.Breakdown.Rows.Count > 0) {
+                  ReportTable(answer!.Breakdown, answer!.Words, label: $"{answer!.Title} by {answer!.Dimensions[answer!.By]}");
+                  if (answer!.Breakdown.Truncated) {
+                    Text($"The {answer!.Breakdown.Rows.Count} largest. Build a report to see every one.", fontSize: FontSize.Caption,
+                         color: Colors.TextMuted, px: 4, py: 3, role: UiRole.Status);
+                  }
+                } else {
+                  Stack(px: 4, pb: 4) { ReportStatus(answer!.Breakdown, answer!.Nouns); }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// A titled card on the overview.
+component OverviewCard(string title) {
+  render {
+    Stack(gap: 2, w: "100%", bg: Colors.Surface, rounded: Radius.Lg, borderW: 1, border: Colors.Border, pt: 4,
+          overflow: Overflow.Hidden, role: UiRole.Region, label: title) {
+      Text(title, fontSize: FontSize.Label, fontWeight: FontWeight.Semibold, px: 4);
+      Slot;
+    }
+  }
+}
+
+/// Nothing at all in the trend — every bucket zero or empty.
+public bool Quiet(ExploreResult result) {
+  foreach (var r in result.Rows) {
+    foreach (var cell in r.Cells.Skip(1)) {
+      if (!cell.Empty && ChartValue(cell) != 0.0) { return false; }
+    }
+  }
+  return true;
+}

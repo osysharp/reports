@@ -1,0 +1,790 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Explore;
+
+// ── the builder ───────────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚑ START FROM ONE THING, FOLLOW ITS RELATIONS. The fields panel is the root's fields and every field reached from it,
+//   each shown with its trail (Order › Café › Region), searchable by name across the whole reachable graph, the app's
+//   own groupings first. Picking a field offers only what makes sense for its kind — group by it, measure it, filter on
+//   it — and the answer below changes as it is picked.
+// ⚑ A FILTER IS A SENTENCE. Every filter shows as a chip that reads as one ("Status is Placed or Roasting", "Café is
+//   Northwind"), and is removed with its ×. A filter on a field this reader can no longer reach (a saved report whose
+//   field was dropped, or that another person may read and they may not) stays on screen, marked, and the report says
+//   why it cannot run — it is never quietly dropped, because a dropped filter answers a wider question.
+
+/// The words a period preset is shown by in the builder's strip — short, so eight fit on a line.
+public string PresetShort(PeriodPreset p) {
+  if (p == PeriodPreset.Today) { return "Today"; }
+  if (p == PeriodPreset.Last7Days) { return "7 days"; }
+  if (p == PeriodPreset.Last30Days) { return "30 days"; }
+  if (p == PeriodPreset.Last90Days) { return "90 days"; }
+  if (p == PeriodPreset.ThisWeek) { return "This week"; }
+  if (p == PeriodPreset.ThisMonth) { return "This month"; }
+  if (p == PeriodPreset.LastMonth) { return "Last month"; }
+  if (p == PeriodPreset.ThisQuarter) { return "This quarter"; }
+  if (p == PeriodPreset.ThisYear) { return "This year"; }
+  return "Custom";
+}
+
+/// A field's trail as a person reads it — "Order › Café › Region".
+public string TrailText(ExploreField f) { return String.Join(" › ", f.Trail); }
+
+/// Where a field sits, without its own name — "Order › Café". What the picker shows beside the field's label.
+public string TrailOf(ExploreField f) {
+  if (f.Trail.Length <= 1) { return ""; }
+  return String.Join(" › ", f.Trail.Take(f.Trail.Length - 1));
+}
+
+/// Where a field sits, in the APP's words — "Ticket › Company" rather than the model's "Ticket › Organization": the
+/// root by the source's noun, each step by `FieldWord`.
+public string TrailIn(ExploreField f, ReportSource source) {
+  if (f.Trail.Length <= 1) { return ""; }
+  var parts = f.Path.Split('.');
+  List<string> words = [source.Noun == "" ? f.Trail[0] : source.Noun.Substring(0, 1).ToUpper() + source.Noun.Substring(1)];
+  for (var i = 1; i < f.Trail.Length - 1; i = i + 1) {
+    words.Add(FieldWord(source, String.Join(".", parts.Take(i)), f.Trail[i]));
+  }
+  return String.Join(" › ", words);
+}
+
+/// The field at `path`, or null when this reader cannot reach it.
+public ExploreField? FieldNamed(List<ExploreField> fields, string path) {
+  return fields.FirstOrDefault(f => f.Path == path);
+}
+
+/// What a filter says, as a sentence — "Status is Placed or Roasting", "Kilos is at least 5", "Café is Northwind".
+public string FilterWords(ExploreFilter f, List<ExploreField> fields) {
+  var field = FieldNamed(fields, f.Field);
+  var name = field == null ? f.Field : TrailWords(field);
+  var shown = f.Labels.Length == f.Values.Length && f.Labels.Length > 0 ? f.Labels : f.Values;
+  var through = field != null && field.Through != "" ? $" ({f.Through.Label})" : "";
+  if (f.Op == FilterOp.IsEmpty) { return $"{name} is empty{through}"; }
+  if (f.Op == FilterOp.HasValue) { return $"{name} has a value{through}"; }
+  if (f.Op == FilterOp.Between && shown.Length == 2) { return $"{name} between {shown[0]} and {shown[1]}{through}"; }
+  if (f.Op == FilterOp.IsAnyOf) {
+    if (shown.Length == 1) { return $"{name} is {shown[0]}{through}"; }
+    var head = String.Join(", ", shown.Take(shown.Length - 1));
+    return $"{name} is {head} or {shown[shown.Length - 1]}{through}";
+  }
+  return $"{name} {f.Op.Label} {(shown.Length > 0 ? shown[0] : "")}{through}";
+}
+
+/// A field named as a chip names it — its own label, after the relation it is reached by when that is not the root
+/// ("Café › Region", "Customer › NPS"). Both are the trail's own words, so both are in the reader's language (a custom
+/// field's name is a person's, kept as they wrote it), and the arrow reads the same way in every language — where
+/// "Café region" puts the words in an order only some languages use.
+public string TrailWords(ExploreField f) {
+  if (f.Depth == 0 || f.Trail.Length < 2) { return f.Label; }
+  return $"{f.Trail[f.Trail.Length - 2]} › {f.Label}";
+}
+
+/// What a grouping says — "Region", "Placed, by week".
+public string GroupWords(ExploreGroup g, List<ExploreField> fields, ReportSource source) {
+  foreach (var d in source.Dimensions) { if (d.Field == g.Field && d.Label != "") { return BucketWords(d.Label, g.Bucket); } }
+  var field = FieldNamed(fields, g.Field);
+  return BucketWords(field == null ? g.Field : TrailWords(field), g.Bucket);
+}
+
+string BucketWords(string name, TimeBucket? bucket) {
+  if (bucket == null) { return name; }
+  return $"{name}, by {bucket!.Value.Label.ToLower()}";
+}
+
+/// What a measure says — its curated label, or "Average kilos", "Median time to ship".
+public string MeasureWords(ExploreMeasure m, List<ExploreField> fields, ReportSource source) {
+  foreach (var c in source.Measures) { if (c.Measure.Name == m.Name && c.Label != "") { return c.Label; } }
+  var field = FieldNamed(fields, m.Field);
+  var what = field == null ? m.Field : TrailWords(field).ToLower();
+  if (m.Kind == MeasureKind.Count) { return source.Nouns; }
+  if (m.Kind == MeasureKind.Percentile) { return $"{Math.Round(m.Fraction * 100m)}th percentile of {what}"; }
+  if (m.Kind == MeasureKind.Distinct) { return $"Different {what}"; }
+  return $"{m.Kind.Label} {what}";
+}
+
+/// The measures a query runs: the ones chosen, and any a chosen share is divided from — so a ratio always has both.
+public List<ExploreMeasure> WithParts(List<ExploreMeasure> chosen, ReportSource source) {
+  List<ExploreMeasure> all = [];
+  foreach (var m in chosen) {
+    if (m.Kind == MeasureKind.Ratio) {
+      foreach (var part in [m.Numerator, m.Denominator]) {
+        if (!all.Any(x => x.Name == part) && !chosen.Any(x => x.Name == part)) {
+          var curated = source.Measures.FirstOrDefault(c => c.Measure.Name == part);
+          if (curated != null) { all.Add(curated.Measure); }
+        }
+      }
+    }
+    all.Add(m);
+  }
+  return all;
+}
+
+/// The field search's hint — the source's own first groupings ("Region, courier, status…").
+public string SearchHint(ReportSource source) {
+  if (source.Dimensions.Count == 0) { return "Search the fields…"; }
+  var words = source.Dimensions.Take(3).Select(d => d.Label.ToLower()).ToList();
+  var first = words[0];
+  words[0] = first.Substring(0, 1).ToUpper() + first.Substring(1);
+  return String.Join(", ", words) + "…";
+}
+
+/// A saved report's name hint — "Orders by region", from the source's words.
+public string NameHint(ReportSource source) {
+  return source.Dimensions.Count == 0 ? source.Title : $"{source.Title} by {source.Dimensions[0].Label.ToLower()}";
+}
+
+/// A short glyph for a field's kind, so a list of fifty fields can be scanned by what each holds.
+public string KindMark(FieldKind k) {
+  if (k == FieldKind.Number) { return "#"; }
+  if (k == FieldKind.Date) { return "◷"; }
+  if (k == FieldKind.Duration) { return "⧗"; }
+  if (k == FieldKind.Flag) { return "✓"; }
+  if (k == FieldKind.Choice) { return "≡"; }
+  if (k == FieldKind.Reference) { return "↗"; }
+  return "Aa";
+}
+
+/// THE REPORT BUILDER for `report`: fields on the left (on a phone, above), the report on the
+/// right — its groupings, measures and filters as chips, the figures or the chart and table under them, live. Saved
+/// reports open from the menu; Save keeps the question (never the numbers) for oneself or, for somebody who may share
+/// reports, for the team. `open`: a saved report to open with.
+[Composable]
+public component ReportBuilder(ReportSource report, Guid? open = null) {
+  // The source is handed over as itself (a typed reference); the server is asked by its key.
+  live var source = report.Key;
+  ReportDesk? desk = null;
+  ReportAnswer? answer = null;
+  bool loading = true;
+  List<ExploreGroup> groups = [];
+  List<ExploreMeasure> measures = [];
+  // The conditions on the rows — a tree of "all of" / "any of" groups — and on the groups (HAVING).
+  ExploreFilterGroup where = new ExploreFilterGroup();
+  List<ExploreHaving> having = [];
+  // Which group a new condition goes into — its path of group indexes from the top ("", "0", "0/1").
+  string target = "";
+  bool addingHaving = false;
+  PeriodPreset preset = PeriodPreset.Last30Days;
+  // The days of a chosen period (`PeriodPreset.Custom`).
+  DateOnly? first = null;
+  DateOnly? last = null;
+  string search = "";
+  string picked = "";
+  ExploreField? filtering = null;
+  bool showFields = false;
+  // Saving and the saved list.
+  bool saving = false;
+  string saveName = "";
+  bool saveShared = false;
+  string savedAs = "";
+  string problem = "";
+  string csv = "";
+  // A drill-through: the rows one figure or one group counts, and what they are the rows of.
+  ReportAnswer? drill = null;
+  string drillOf = "";
+
+  on mount {
+    try {
+      desk = OpenReportDesk(source);
+      if (desk != null && desk!.Source.Measures.Count > 0) { measures = [desk!.Source.Measures[0].Measure]; }
+      if (desk != null && open != null) { OpenSaved(open!.Value); }
+      Refresh();
+    } catch (Exception ex) { problem = ex.Message; loading = false; }
+  }
+
+  action Refresh() {
+    if (desk == null) { return; }
+    loading = true;
+    csv = "";
+    try { answer = RunSourceReport(source, QueryNow(500), preset, first, last, compare: groups.Count == 0); }
+    catch (Exception ex) { problem = ex.Message; }
+    loading = false;
+  }
+
+  /// The report as it stands, as a query — `limit` groups at most.
+  ExploreQuery QueryNow(int limit) {
+    return new ExploreQuery { Root = desk!.Source.Root, GroupBy = groups, Measures = WithParts(measures, desk!.Source),
+                              Where = where, Having = groups.Count == 0 ? [] : having, SortBy = SortFor(), Limit = limit };
+  }
+
+  /// A category grouping is sorted by its first measure, largest first; a trend by its dates.
+  string SortFor() {
+    if (groups.Count == 0 || measures.Count == 0) { return ""; }
+    return groups[0].Bucket != null ? "" : measures[0].Name;
+  }
+
+  action Period(PeriodPreset p) { preset = p; first = null; last = null; drill = null; Refresh(); }
+  /// The rows behind group `index` of the table — counted by the report's first measure.
+  action DrillGroup(int index) {
+    if (answer == null || measures.Count == 0 || index < 0 || index >= answer!.Result.Rows.Count) { return; }
+    var row = answer!.Result.Rows[index];
+    drillOf = CellText(row.Cells[0], answer!.Result.Columns[0].Kind, FormatOf(answer!.Result.Columns[0], desk!.Source));
+    try { drill = RunSourceRows(source, QueryNow(500), measures[0].Name, preset, first, last, answer!.Result.Columns, row); }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+  /// The rows behind the period's figure for the measure `name`.
+  action DrillFigure(string name, string label) {
+    drillOf = label;
+    try { drill = RunSourceRows(source, QueryNow(500), name, preset, first, last); }
+    catch (Exception ex) { problem = ex.Message; }
+  }
+  action CloseDrill() { drill = null; }
+  action Dates(DateOnly from, DateOnly to) { preset = PeriodPreset.Custom; first = from; last = to; drill = null; Refresh(); }
+  action Pick(ExploreField f) { picked = picked == f.Path ? "" : f.Path; }
+  action GroupBy(ExploreField f) {
+    if (groups.Any(g => g.Field == f.Path) || groups.Count >= 2) { picked = ""; return; }
+    var next = groups.ToList();
+    next.Add(new ExploreGroup { Field = f.Path });
+    groups = next;
+    picked = "";
+    showFields = false;
+    Refresh();
+  }
+  action Ungroup(ExploreGroup g) {
+    groups = groups.Where(x => x.Field != g.Field).ToList();
+    if (groups.Count == 0) { having = []; }
+    Refresh();
+  }
+  action Bucket(ExploreGroup g, TimeBucket b) {
+    groups = groups.Select(x => x.Field == g.Field ? new ExploreGroup { Field = x.Field, Bucket = b } : x).ToList();
+    Refresh();
+  }
+  action Measure(ExploreMeasure m) {
+    if (measures.Any(x => x.Name == m.Name)) { return; }
+    var next = measures.ToList();
+    next.Add(m);
+    measures = next;
+    picked = "";
+    showFields = false;
+    Refresh();
+  }
+  action MeasureField(ExploreField f, MeasureKind kind, decimal fraction) {
+    Measure(new ExploreMeasure { Name = $"{kind}:{fraction}:{f.Path}", Kind = kind, Field = f.Path, Fraction = fraction });
+  }
+  action Unmeasure(ExploreMeasure m) {
+    if (measures.Count <= 1) { return; }
+    measures = measures.Where(x => x.Name != m.Name).ToList();
+    having = having.Where(h => h.Measure != m.Name).ToList();
+    Refresh();
+  }
+  /// A field picked to filter on goes into the group the person last chose to add to ("Add condition"), or the top.
+  action StartFilter(ExploreField f) { filtering = f; picked = ""; showFields = false; }
+  action ApplyFilter(ExploreFilter f) {
+    var group = GroupAt(where, target);
+    group.Filters = group.Filters.Where(x => x.Field != f.Field).ToList();
+    group.Filters.Add(f);
+    Touch();
+    filtering = null;
+    Refresh();
+  }
+  action CancelFilter() { filtering = null; }
+  action RemoveFilter(string path, ExploreFilter f) {
+    var group = GroupAt(where, path);
+    group.Filters = group.Filters.Where(x => x != f).ToList();
+    Touch();
+    Refresh();
+  }
+  /// "Add condition" in a group: the next field picked to filter goes there. On a phone it opens the fields.
+  action AddConditionTo(string path) { target = path; showFields = true; }
+  action AddGroupTo(string path) {
+    var group = GroupAt(where, path);
+    group.Groups.Add(new ExploreFilterGroup { Match = group.Match == FilterMatch.All ? FilterMatch.Any : FilterMatch.All });
+    target = path == "" ? $"{group.Groups.Count - 1}" : $"{path}/{group.Groups.Count - 1}";
+    Touch();
+  }
+  action RemoveGroup(string path) {
+    var slash = path.LastIndexOf("/");
+    var parent = GroupAt(where, slash < 0 ? "" : path.Substring(0, slash));
+    var at = Convert.ToInt(slash < 0 ? path : path.Substring(slash + 1));
+    parent.Groups.RemoveAt(at);
+    target = "";
+    Touch();
+    Refresh();
+  }
+  action Flip(string path) {
+    var group = GroupAt(where, path);
+    group.Match = group.Match == FilterMatch.All ? FilterMatch.Any : FilterMatch.All;
+    Touch();
+    Refresh();
+  }
+  /// The tree was changed in place: a new top makes the page read it again.
+  void Touch() { where = new ExploreFilterGroup { Match = where.Match, Filters = where.Filters, Groups = where.Groups }; }
+  action StartHaving() { addingHaving = true; }
+  action CancelHaving() { addingHaving = false; }
+  action ApplyHaving(ExploreHaving h) {
+    var next = having.ToList();
+    next.Add(h);
+    having = next;
+    addingHaving = false;
+    Refresh();
+  }
+  action RemoveHaving(ExploreHaving h) { having = having.Where(x => x != h).ToList(); Refresh(); }
+  action ToggleFields() { showFields = !showFields; }
+
+  action OpenSaved(Guid id) {
+    var r = OpenReport(id);
+    if (r == null) { problem = "That report is not one you may open."; return; }
+    groups = r!.Query.GroupBy;
+    measures = r!.Query.Measures.Where(m => !r!.Query.Measures.Any(x => x.Kind == MeasureKind.Ratio && (x.Numerator == m.Name || x.Denominator == m.Name))).ToList();
+    where = r!.Query.Where;
+    having = r!.Query.Having;
+    preset = r!.Period;
+    first = r!.FirstDay;
+    last = r!.LastDay;
+    savedAs = r!.Name;
+    saveName = r!.Name;
+    saveShared = r!.Shared;
+  }
+  action Load(Guid id) { OpenSaved(id); Refresh(); }
+  action StartSave() { saving = true; if (saveName == "") { saveName = desk == null ? "" : desk!.Source.Title; } }
+  action CancelSave() { saving = false; }
+  action Save() {
+    if (desk == null) { return; }
+    problem = "";
+    try {
+      var q = new ExploreQuery { Root = desk!.Source.Root, GroupBy = groups, Measures = measures, Where = where,
+                                 Having = groups.Count == 0 ? [] : having, SortBy = SortFor() };
+      SaveReport(source, saveName, q, preset, saveShared, first, last);
+      savedAs = saveName.Trim();
+      saving = false;
+      desk = OpenReportDesk(source);
+    } catch (Exception ex) { problem = ex.Message; }
+  }
+  action Export() {
+    if (desk == null) { return; }
+    csv = ReportCsvLink(source, QueryNow(5000), preset, savedAs != "" ? savedAs : desk!.Source.Title, first, last);
+  }
+
+  render {
+    Stack(gap: 0, w: "100%", minH: "100%", bg: Colors.Bg, label: desk == null ? "Report" : desk!.Source.Title) {
+      if (desk == null && !loading) {
+        Stack(p: 6) { Alert(problem != "" ? problem : "This app has no report by that name.", tone: Tone.Danger); }
+      }
+      if (desk != null) {
+        ReportHead(desk!, savedAs, answer == null ? "" : answer!.Period, preset, Period, Load, StartSave, Export, csv,
+                   Dates, first, last);
+        if (saving) {
+          SaveReportBar(saveName, saveShared, Save, CancelSave, problem) {
+            Field("Report name", value: saveName, placeholder: NameHint(desk!.Source), onEnter: Save);
+            Checkbox("Share with everybody who reads reports", value: saveShared);
+          }
+        }
+        Row(gap: 0, align: Align.Start, w: "100%", grow: 1, minH: "0", wrap: Layout.AtLeast(Tablet) ? Wrapping.Nowrap : Wrapping.Wrap) {
+          if (Layout.AtLeast(Tablet) || showFields) {
+            Stack(gap: 0, w: Layout.AtLeast(Tablet) ? "320px" : "100%", shrink: 0, bg: Colors.Surface,
+                  borderRW: Layout.AtLeast(Tablet) ? 1 : 0, borderBW: Layout.AtLeast(Tablet) ? 0 : 1, border: Colors.Border,
+                  position: Layout.AtLeast(Tablet) ? Position.Sticky : Position.Static, top: 0,
+                  maxH: Layout.AtLeast(Tablet) ? "100vh" : "none", overflowY: Overflow.Auto, label: "Fields") {
+              Stack(gap: 2, p: 4, borderBW: 1, border: Colors.Border) {
+                Field("Find a field", value: search, placeholder: SearchHint(desk!.Source));
+              }
+              FieldList(desk!.Fields, desk!.Source, search, picked, Pick, GroupBy, MeasureField, StartFilter);
+            }
+          }
+          Stack(gap: 5, grow: 1, minW: "0", p: Layout.AtLeast(Tablet) ? 6 : 4) {
+            if (!Layout.AtLeast(Tablet)) {
+              Button(showFields ? "Hide fields" : "Add a field", onPress: ToggleFields, tone: Tone.Default);
+            }
+            ReportChips(groups, measures, desk!.Fields, desk!.Source, answer, Ungroup, Bucket, Unmeasure);
+            Stack(gap: 3, w: "100%", p: 4, bg: Colors.Surface, rounded: Radius.Lg, borderW: 1, border: Colors.Border,
+                  role: UiRole.Region, label: "Conditions") {
+              FilterTree(where, "", 0, desk!.Fields, answer, target, RemoveFilter, AddConditionTo, AddGroupTo, RemoveGroup, Flip);
+              if (filtering != null) {
+                FilterEditor(source, filtering!, GroupAt(where, target).Filters.FirstOrDefault(x => x.Field == filtering!.Path),
+                             ApplyFilter, CancelFilter);
+              }
+              if (groups.Count > 0) {
+                Box(w: "100%", borderTW: 1, border: Colors.Border, pt: 3) {
+                  HavingLine(having, measures, desk!.Fields, desk!.Source, addingHaving, StartHaving, ApplyHaving, CancelHaving, RemoveHaving);
+                }
+              }
+            }
+            if (problem != "" && !saving) { Alert(problem, tone: Tone.Danger); }
+            ReportStatus(loading ? null : (answer == null ? null : answer!.Result), desk!.Source.Nouns, loading);
+            if (!loading && answer != null && answer!.Result.Problem == "" && answer!.Result.Rows.Count > 0) {
+              if (groups.Count == 0) {
+                ReportTotals(answer!, desk!.Source, desk!.Source.RowFields.Count > 0 ? DrillFigure : null);
+              } else {
+                ReportChart(answer!.Result, desk!.Source, bucket: answer!.Bucket);
+                Stack(gap: 0, w: "100%", bg: Colors.Surface, rounded: Radius.Lg, borderW: 1, border: Colors.Border, overflow: Overflow.Hidden) {
+                  ReportTable(answer!.Result, desk!.Source, label: desk!.Source.Title,
+                              onRow: desk!.Source.RowFields.Count > 0 && measures.Count > 0 ? DrillGroup : null);
+                }
+              }
+              if (drill != null) { ReportRows(drill!, desk!.Source, drillOf, CloseDrill); }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// The builder's head: the source's title (or the saved report's name), the period in words, the period presets, and
+/// the saved reports, export and save.
+component ReportHead(ReportDesk desk, string savedAs, string period, PeriodPreset preset, Action<PeriodPreset> onPeriod,
+                     Action<Guid> onLoad, Action onSave, Action onExport, string csv, Action<DateOnly, DateOnly> onDates,
+                     DateOnly? first, DateOnly? last) {
+  bool menu = false;
+  action ToggleMenu() { menu = !menu; }
+  action CloseMenu() { menu = false; }
+  action Load(Guid id) { menu = false; onLoad(id); }
+  render {
+    Stack(gap: 3, px: Layout.AtLeast(Tablet) ? 6 : 4, pt: 5, pb: 3, bg: Colors.Bg, borderBW: 1, border: Colors.Border) {
+      Row(gap: 3, align: Align.Center, wrap: Wrapping.Wrap) {
+        Stack(gap: 0, grow: 1, minW: "0") {
+          Text(savedAs != "" ? savedAs : desk.Source.Title, fontSize: FontSize.Title, fontWeight: FontWeight.Semibold,
+               letterSpacing: "-0.02em");
+          if (period != "") {
+            Text(savedAs != "" ? $"{desk.Source.Title} · {period}" : period, fontSize: FontSize.Caption,
+                 color: Colors.TextMuted, fontVariant: FontVariant.TabularNums);
+          }
+        }
+        Row(gap: 2, align: Align.Center, shrink: 0) {
+        if (desk.Saved.Count > 0) {
+          Box(position: Position.Relative) {
+            Button("Saved reports", onPress: ToggleMenu, tone: Tone.Default);
+            if (menu) {
+              Backdrop(CloseMenu);
+              Menu(from: MenuFrom.BelowEnd, label: "Saved reports") {
+                foreach (var s in desk.Saved) {
+                  MenuItem(s.Shared ? $"{s.Name} · shared" : s.Name, () => Load(s.Id));
+                }
+              }
+            }
+          }
+        }
+        if (csv != "") {
+          Link(href: csv, label: "Download the CSV", px: 4, py: 2, rounded: Radius.Md, borderW: 1, border: Colors.Primary,
+               color: Colors.Primary, bg: Colors.Surface) {
+            Text("Download CSV", fontWeight: FontWeight.Medium, fontSize: FontSize.Label, whiteSpace: WhiteSpace.Nowrap);
+          }
+        } else {
+          Button("Export CSV", onPress: onExport, tone: Tone.Default);
+        }
+        Button("Save", onPress: onSave, tone: Tone.Primary);
+        }
+      }
+      PeriodTabs(preset, onPeriod, onDates, first, last);
+    }
+  }
+}
+
+/// The bar a report is named and saved in.
+component SaveReportBar(string name, bool shared, Action onSave, Action onCancel, string problem) {
+  render {
+    Stack(gap: 3, px: 6, py: 4, bg: Colors.Surface, borderBW: 1, border: Colors.Border, role: UiRole.Region, label: "Save the report") {
+      Row(gap: 3, align: Align.End, wrap: Wrapping.Wrap) {
+        Stack(gap: 2, grow: 1, minW: "240px") { Slot; }
+        Button("Save report", onPress: onSave, tone: Tone.Primary);
+        Button("Cancel", onPress: onCancel, tone: Tone.Ghost);
+      }
+      if (problem != "") { Text(problem, color: Colors.Danger, fontSize: FontSize.Label, role: UiRole.Alert); }
+      Text("A saved report keeps the question, not the numbers: whoever opens it sees the rows they may read, as they are then.",
+           fontSize: FontSize.Caption, color: Colors.TextMuted);
+    }
+  }
+}
+
+/// The report's groupings, measures and filters, each a chip that reads as what it does, with an × to take it off.
+component ReportChips(List<ExploreGroup> groups, List<ExploreMeasure> measures,
+                      List<ExploreField> fields, ReportSource source, ReportAnswer? answer,
+                      Action<ExploreGroup> onUngroup, Action<ExploreGroup, TimeBucket> onBucket,
+                      Action<ExploreMeasure> onUnmeasure) {
+  live var unreachable = answer == null ? new List<string>() : answer!.Result.Unreachable.ToList();
+  render {
+    // THE QUESTION, AS A HEADLINE: what is counted, and what it is broken down by — "Tickets by Tier". The conditions
+    // sit under it in their own box; they narrow the question, they are not the question.
+    Stack(gap: 2, w: "100%", role: UiRole.Group, label: "What the report shows") {
+      Row(gap: 2, align: Align.Center, wrap: Wrapping.Wrap) {
+        foreach (var m in measures) {
+          ReportChip(MeasureWords(m, fields, source), () => onUnmeasure(m), removable: measures.Count > 1,
+                     warn: unreachable.Contains(m.Field), big: true);
+        }
+        Text(groups.Count == 0 ? "for the whole period" : "by", fontSize: FontSize.Heading, color: Colors.TextMuted);
+        foreach (var g in groups) {
+          ReportChip(GroupWords(g, fields, source), () => onUngroup(g), warn: unreachable.Contains(g.Field), big: true);
+          if (g.Bucket != null) {
+            foreach (var b in [TimeBucket.Day, TimeBucket.Week, TimeBucket.Month]) {
+              Pressable(onClick: () => onBucket(g, b), label: $"By {b.Label.ToLower()}", px: 2, py: 1, rounded: Radius.Sm,
+                        fontSize: FontSize.Caption, color: g.Bucket == b ? Colors.Primary : Colors.TextMuted,
+                        fontWeight: g.Bucket == b ? FontWeight.Semibold : FontWeight.Regular) {
+                Text(b.Label.ToLower());
+              }
+            }
+          }
+        }
+      }
+      if (groups.Count == 0) {
+        Text("Pick a field and Group by to break it down; pick Total, Average or a percentile to measure it.",
+             fontSize: FontSize.Caption, color: Colors.TextMuted);
+      }
+    }
+  }
+}
+
+/// One line of chips with its word on the start edge.
+component ChipLine(string word) {
+  render {
+    Row(gap: 2, align: Align.Center, wrap: Wrapping.Wrap, role: UiRole.Group, label: word) {
+      Text(word, fontSize: FontSize.Caption, fontWeight: FontWeight.Semibold, color: Colors.TextSecondary, minW: "84px");
+      Slot;
+    }
+  }
+}
+
+/// One chip: what it does in words, and an × that takes it off. `warn`: it names a field this reader cannot reach — it
+/// stays, marked, so the report says what it asked instead of quietly asking less.
+component ReportChip(string text, Action onRemove, bool removable = true, bool warn = false, bool big = false) {
+  render {
+    Row(gap: 1, align: Align.Center, pl: big ? 4 : 3, pr: removable ? 1 : (big ? 4 : 3), py: big ? 1 : 1, rounded: Radius.Pill,
+        bg: warn ? Colors.Danger.Subtle : Colors.Surface, borderW: 1, border: warn ? Colors.BorderDanger : Colors.Border,
+        maxW: "100%", role: UiRole.Group, label: text) {
+      Text(warn ? text + " — you cannot read this field" : text, fontSize: big ? FontSize.Heading : FontSize.Label,
+           fontWeight: big ? FontWeight.Semibold : FontWeight.Regular, whiteSpace: WhiteSpace.Nowrap,
+           overflow: Overflow.Hidden, textOverflow: TextOverflow.Ellipsis, minW: "0",
+           color: warn ? Colors.Danger : Colors.OnSurface);
+      if (removable) {
+        IconButton($"Remove {text}", onPress: onRemove, size: Size.Sm, tone: Tone.Ghost) { Icon(Icons.Close, size: 14); }
+      }
+    }
+  }
+}
+
+/// Totals for the period, as headline figures — each with its change against the period before it.
+component ReportTotals(ReportAnswer answer, ReportSource source, Action<string, string>? onOpen = null) {
+  render {
+    if (answer.PeriodBefore != "") {
+      Text($"Change against {answer.PeriodBefore}", fontSize: FontSize.Caption, color: Colors.TextMuted,
+           fontVariant: FontVariant.TabularNums, mb: -3);
+    }
+    ReportFigures(label: "Totals", count: answer.Result.Columns.Count) {
+      foreach (var c in answer.Result.Columns) {
+        var value = CellText(answer.Result.Rows[0].Cells[answer.Result.Columns.FindIndex(x => x.Name == c.Name)], c.Kind, FormatOf(c, source));
+        if (onOpen != null) {
+          ReportFigure(HeadingOf(c, source), value, hint: HintOf(c, source), change: ChangeWords(answer, c, source),
+                       good: ChangeIsGood(answer, c, source), flat: ChangeIsFlat(answer, c),
+                       onOpen: () => onOpen!(c.Name, HeadingOf(c, source)));
+        } else {
+          ReportFigure(HeadingOf(c, source), value, hint: HintOf(c, source), change: ChangeWords(answer, c, source),
+                       good: ChangeIsGood(answer, c, source), flat: ChangeIsFlat(answer, c));
+        }
+      }
+    }
+  }
+}
+
+/// A measure's one-line hint, from the source.
+public string HintOf(ExploreColumn c, ReportSource source) {
+  foreach (var m in source.Measures) { if (m.Measure.Name == c.Name) { return m.Hint; } }
+  return "";
+}
+
+/// "+12%" — a figure's change against the period before (which the page names once, above the figures). "" when there is nothing to compare.
+public string ChangeWords(ReportAnswer answer, ExploreColumn c, ReportSource source) {
+  if (answer.Before == null || answer.Before!.Rows.Count == 0 || answer.Result.Rows.Count == 0) { return ""; }
+  var i = answer.Result.Columns.FindIndex(x => x.Name == c.Name);
+  var now = answer.Result.Rows[0].Cells[i];
+  var then = answer.Before!.Rows[0].Cells[i];
+  var a = ChartValue(now);
+  var b = ChartValue(then);
+  if (now.Empty || then.Empty || b == 0.0) { return ""; }
+  var pct = Math.Round((a - b) / b * 100.0);
+  var sign = pct > 0 ? "+" : "";
+  return $"{sign}{pct}%";
+}
+
+/// No change against the period before — said in the quiet colour, neither good nor bad news.
+public bool ChangeIsFlat(ReportAnswer answer, ExploreColumn c) {
+  if (answer.Before == null || answer.Before!.Rows.Count == 0 || answer.Result.Rows.Count == 0) { return false; }
+  var i = answer.Result.Columns.FindIndex(x => x.Name == c.Name);
+  return ChartValue(answer.Result.Rows[0].Cells[i]) == ChartValue(answer.Before!.Rows[0].Cells[i]);
+}
+
+/// Is the change good news? A rise, unless the source says a fall is good for this measure.
+public bool ChangeIsGood(ReportAnswer answer, ExploreColumn c, ReportSource source) {
+  if (answer.Before == null || answer.Before!.Rows.Count == 0) { return true; }
+  var i = answer.Result.Columns.FindIndex(x => x.Name == c.Name);
+  var rose = ChartValue(answer.Result.Rows[0].Cells[i]) >= ChartValue(answer.Before!.Rows[0].Cells[i]);
+  foreach (var m in source.Measures) { if (m.Measure.Name == c.Name) { return rose == m.HigherIsBetter; } }
+  return true;
+}
+
+/// The group at `path` — its indexes from the top, "/"-separated ("" is the top).
+public ExploreFilterGroup GroupAt(ExploreFilterGroup top, string path) {
+  if (path == "") { return top; }
+  var group = top;
+  foreach (var part in path.Split('/')) {
+    var at = Convert.ToInt(part);
+    if (at < 0 || at >= group.Groups.Count) { return group; }
+    group = group.Groups[at];
+  }
+  return group;
+}
+
+/// A group as one sentence — "Status is Open and (Priority is High or Tier is Enterprise)". "" for an empty group.
+public string GroupSentence(ExploreFilterGroup g, List<ExploreField> fields) {
+  List<string> parts = [];
+  foreach (var f in g.Filters) { parts.Add(FilterWords(f, fields)); }
+  foreach (var inner in g.Groups) {
+    var said = GroupSentence(inner, fields);
+    if (said != "") { parts.Add("(" + said + ")"); }
+  }
+  return String.Join(g.Match == FilterMatch.All ? " and " : " or ", parts);
+}
+
+/// THE CONDITIONS, AS A TREE YOU CAN SEE: a group says its rule — "All of" or "Any of", pressed to flip — and holds its
+/// conditions as chips that read as sentences, and its own groups indented under a bracket on the start edge. Each
+/// group has "Add condition" (the next field picked to filter on goes in it) and "Add group". Past the third level a
+/// group shows as its one sentence, so a phone never has to fit a staircase.
+component FilterTree(ExploreFilterGroup group, string path, int depth, List<ExploreField> fields, ReportAnswer? answer,
+                     string target, Action<string, ExploreFilter> onRemove, Action<string> onAddCondition,
+                     Action<string> onAddGroup, Action<string> onRemoveGroup, Action<string> onFlip) {
+  live var unreachable = answer == null ? new List<string>() : answer!.Result.Unreachable.ToList();
+  live var empty = group.Filters.Count == 0 && group.Groups.Count == 0;
+  render {
+    Stack(gap: 2, w: "100%", pl: depth == 0 ? 0 : 3, borderLW: depth == 0 ? 0 : 2,
+          border: target == path && depth > 0 ? Colors.Primary : Colors.Border,
+          role: UiRole.Group, label: depth == 0 ? "Only rows where" : $"{group.Match.Label} these") {
+      Row(gap: 2, align: Align.Center, wrap: Wrapping.Wrap) {
+        Text(depth == 0 ? "Only" : "", fontSize: FontSize.Caption, fontWeight: FontWeight.Semibold, color: Colors.TextSecondary,
+             minW: depth == 0 ? "84px" : "0");
+        if (!empty || depth > 0) {
+          Pressable(onClick: () => onFlip(path), label: $"{group.Match.Label} — press to switch", px: 2, py: 1, rounded: Radius.Sm,
+                    bg: Colors.Muted, fontSize: FontSize.Caption, fontWeight: FontWeight.Semibold, display: Display.Flex,
+                    gap: 1, align: Align.Center) {
+            Text(group.Match.Label);
+            Icon(Icons.Updown, size: 12, color: Colors.TextMuted);
+          }
+        }
+        if (empty && depth == 0) {
+          Text("Every row in the period. Pick a field and Filter to narrow it.", fontSize: FontSize.Label, color: Colors.TextMuted);
+        }
+        if (depth >= 3 && !empty) {
+          Text(GroupSentence(group, fields), fontSize: FontSize.Label);
+        } else {
+          foreach (var f in group.Filters) {
+            ReportChip(FilterWords(f, fields), () => onRemove(path, f), warn: unreachable.Contains(f.Field));
+          }
+        }
+        Spacer();
+        Row(gap: 1, align: Align.Center, shrink: 0) {
+          Button("Add condition", onPress: () => onAddCondition(path), size: Size.Sm, tone: target == path ? Tone.Primary : Tone.Ghost);
+          if (depth < 3) { Button("Add group", onPress: () => onAddGroup(path), size: Size.Sm, tone: Tone.Ghost); }
+          if (depth > 0) {
+            IconButton("Remove this group", onPress: () => onRemoveGroup(path), size: Size.Sm, tone: Tone.Ghost) { Icon(Icons.Close, size: 14); }
+          }
+        }
+      }
+      if (depth < 3) {
+        foreach (var inner in group.Groups) {
+          FilterTree(inner, path == "" ? $"{group.Groups.IndexOf(inner)}" : $"{path}/{group.Groups.IndexOf(inner)}", depth + 1, fields,
+                     answer, target, onRemove, onAddCondition, onAddGroup, onRemoveGroup, onFlip);
+        }
+      }
+    }
+  }
+}
+
+/// "Show groups where…" — conditions on the GROUPS by their measures (only cafés with more than ten orders), kept apart
+/// from the row conditions above so nobody mistakes one for the other.
+component HavingLine(List<ExploreHaving> having, List<ExploreMeasure> measures, List<ExploreField> fields, ReportSource source,
+                     bool adding, Action onAdd, Action<ExploreHaving> onApply, Action onCancel, Action<ExploreHaving> onRemove) {
+  live var usable = measures.Where(m => m.Kind != MeasureKind.Ratio).ToList();
+  render {
+    Stack(gap: 2, w: "100%", role: UiRole.Group, label: "Show groups where") {
+      Row(gap: 2, align: Align.Center, wrap: Wrapping.Wrap) {
+        Text("Show groups where…", fontSize: FontSize.Caption, fontWeight: FontWeight.Semibold, color: Colors.TextSecondary);
+        if (having.Count == 0 && !adding) { Text("(all groups shown)", fontSize: FontSize.Label, color: Colors.TextMuted); }
+        foreach (var h in having) {
+          ReportChip(HavingWords(h, measures, fields, source), () => onRemove(h));
+        }
+        if (!adding && usable.Count > 0) { Button("Add", onPress: onAdd, size: Size.Sm, tone: Tone.Ghost); }
+      }
+      if (adding) { HavingEditor(usable, fields, source, onApply, onCancel); }
+    }
+  }
+}
+
+/// "Orders more than 2", "Time to ship at least 1 d".
+public string HavingWords(ExploreHaving h, List<ExploreMeasure> measures, List<ExploreField> fields, ReportSource source) {
+  var m = measures.FirstOrDefault(x => x.Name == h.Measure);
+  var what = m == null ? h.Measure : MeasureWords(m, fields, source);
+  var shown = h.Labels.Length == h.Values.Length && h.Labels.Length > 0 ? h.Labels : h.Values;
+  if (h.Op == FilterOp.Between && shown.Length == 2) { return $"{what} between {shown[0]} and {shown[1]}"; }
+  return $"{what} {h.Op.Label} {(shown.Length > 0 ? shown[0] : "")}";
+}
+
+/// Is a measure read as a duration? Then its HAVING value is a length of time.
+public bool IsDurationMeasure(ExploreMeasure m, List<ExploreField> fields) {
+  if (m.Since != "") { return true; }
+  var f = FieldNamed(fields, m.Field);
+  return f != null && f.Kind == FieldKind.Duration && m.Kind != MeasureKind.Distinct;
+}
+
+/// The editor for one condition on the groups: which measure, how it compares, and the value as that measure reads.
+[SuppressWarning("cost-index-of-in-its-own-loop")]   // a report's measures — a handful, and the tab's number is what it chooses
+component HavingEditor(List<ExploreMeasure> measures, List<ExploreField> fields, ReportSource source, Action<ExploreHaving> onApply,
+                       Action onCancel) {
+  int which = 0;
+  FilterOp op = FilterOp.Above;
+  decimal amount = 0m;
+  TimeSpan span = TimeSpan.Zero;
+  action Choose(int i) { which = i; }
+  action Compare(FilterOp o) { op = o; }
+  action Apply() {
+    var m = measures[which];
+    var duration = IsDurationMeasure(m, fields);
+    onApply(new ExploreHaving { Measure = m.Name, Op = op,
+                                Values = [duration ? $"{span}" : $"{amount}"],
+                                Labels = [duration ? DurationWords(span) : $"{amount}"] });
+  }
+  render {
+    Stack(gap: 3, p: 4, bg: Colors.Surface, rounded: Radius.Lg, borderW: 1, border: Colors.Primary, role: UiRole.Region,
+          label: "Show groups where") {
+      Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: "Measure") {
+        foreach (var m in measures) {
+          Tab(MeasureWords(m, fields, source), selected: measures.IndexOf(m) == which, onPress: () => Choose(measures.IndexOf(m)));
+        }
+      }
+      Row(gap: 2, wrap: Wrapping.Wrap, role: UiRole.Group, label: "Compare") {
+        foreach (var o in [FilterOp.Above, FilterOp.AtLeast, FilterOp.Below, FilterOp.AtMost]) {
+          Tab(o.Label, selected: op == o, onPress: () => Compare(o));
+        }
+      }
+      if (IsDurationMeasure(measures[which], fields)) {
+        DurationField("Length", value: span);
+      } else {
+        DecimalField("Value", value: amount);
+      }
+      Row(gap: 2) {
+        Button("Show these groups", onPress: Apply, tone: Tone.Primary);
+        Button("Cancel", onPress: onCancel, tone: Tone.Ghost);
+      }
+    }
+  }
+}
+
+/// THE ROWS BEHIND A FIGURE — a drill-through: the rows one figure or one group counted, with the source's row fields,
+/// and how many when there were more than are shown.
+component ReportRows(ReportAnswer rows, ReportSource source, string of, Action onClose) {
+  render {
+    Stack(gap: 3, w: "100%", p: 4, bg: Colors.Surface, rounded: Radius.Lg, borderW: 1, border: Colors.Border,
+          role: UiRole.Region, label: "The rows behind " + of) {
+      Row(gap: 2, align: Align.Center) {
+        Text("The rows behind " + of, fontSize: FontSize.Subhead, fontWeight: FontWeight.Semibold, grow: 1, minW: "0");
+        Button("Close", onPress: onClose, size: Size.Sm, tone: Tone.Ghost);
+      }
+      if (rows.Result.Problem != "") {
+        Alert(rows.Result.Problem, tone: Tone.Danger);
+      } else if (rows.Result.Rows.Count == 0) {
+        Text("No rows.", fontSize: FontSize.Label, color: Colors.TextMuted);
+      } else {
+        ReportTable(rows.Result, source, label: "Rows");
+        if (rows.Result.Truncated) {
+          Text($"The first {rows.Result.Rows.Count} — narrow the report to see the rest.", fontSize: FontSize.Caption,
+               color: Colors.TextMuted);
+        }
+      }
+    }
+  }
+}

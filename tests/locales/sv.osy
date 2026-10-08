@@ -1,0 +1,212 @@
+// sv (Svenska): the words of ReportsKitTests, translated.
+// Written and kept in step with the source by `osy translate`: a new text arrives as `=> null`, a text
+// whose source changed keeps its old translation in a `was` clause. The words are yours to edit.
+// Source language: en.
+
+translations sv {
+  // ── (every entity) ──
+  /// (every entity) · a label (a field, a list item, a menu entry) · at most ~16 characters
+  /// shown through the time a record was created or last changed
+  /// beside: "Modified at"
+  label "Created at" => null;
+  /// (every entity) · a label (a field, a list item, a menu entry) · at most ~17 characters
+  /// shown through the time a record was created or last changed
+  /// beside: "Created at"
+  label "Modified at" => null;
+
+  // ── HavingEditor ──
+  /// HavingEditor · a label (a field, a list item, a menu entry) · at most ~11 characters
+  /// shown through DecimalField.label
+  /// also in FilterEditor
+  /// also in TheOrderReport
+  /// also in ReportsKitTests.Order
+  label "Value" => null;
+
+  // ── OrdersOverview (/overview) ──
+  /// OrdersOverview · /overview · a title
+  /// shown through [Title]
+  title "Orders overview" => null;
+
+  // ── OrdersReport (/reports) ──
+  /// OrdersReport · /reports · a title
+  /// shown through [Title]
+  /// also in SavedOrdersReport /reports/{id}
+  title "Orders report" => null;
+
+  // ── ReportsKitTests.Cafe ──
+  /// ReportsKitTests.Cafe · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through ReportsKitTests.Cafe.Contact
+  /// beside: "Name", "Region", "Rep", "Price list"
+  label "Contact" => null;
+  /// ReportsKitTests.Cafe · a label (a field, a list item, a menu entry) · at most ~16 characters
+  /// shown through ReportsKitTests.Cafe.PriceList
+  /// beside: "Name", "Region", "Rep", "Contact"
+  label "Price list" => null;
+
+  // ── ReportsKitTests.Courier ──
+  /// ReportsKitTests.Courier · a label (a field, a list item, a menu entry) · at most ~18 characters
+  /// shown through ReportsKitTests.Courier.Bike
+  /// beside: "Post", "Freight"
+  label "Bike courier" => "Cykelbud";
+  /// ReportsKitTests.Courier · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through ReportsKitTests.Courier.Freight
+  /// beside: "Bike courier", "Post"
+  label "Freight" => null;
+  /// ReportsKitTests.Courier · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through ReportsKitTests.Courier.Post
+  /// beside: "Bike courier", "Freight"
+  label "Post" => null;
+
+  // ── ReportsKitTests.Order ──
+  /// ReportsKitTests.Order · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through ReportsKitTests.Order.Cafe
+  /// beside: "Placed at", "Shipped at", "Kilos", "Value", "Margin", "Courier"
+  label "Cafe" => null;
+  /// ReportsKitTests.Order · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through ReportsKitTests.Order.Margin
+  /// beside: "Cafe", "Placed at", "Shipped at", "Kilos", "Value", "Courier"
+  label "Margin" => null;
+  /// ReportsKitTests.Order · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through ReportsKitTests.Order.Organic
+  /// beside: "Cafe", "Placed at", "Shipped at", "Kilos", "Value", "Margin"
+  label "Organic" => null;
+  /// ReportsKitTests.Order · a label (a field, a list item, a menu entry) · at most ~15 characters
+  /// shown through ReportsKitTests.Order.PlacedAt
+  /// beside: "Cafe", "Shipped at", "Kilos", "Value", "Margin", "Courier"
+  label "Placed at" => "Lagd";
+  /// ReportsKitTests.Order · a label (a field, a list item, a menu entry) · at most ~16 characters
+  /// shown through ReportsKitTests.Order.ShippedAt
+  /// beside: "Cafe", "Placed at", "Kilos", "Value", "Margin", "Courier"
+  label "Shipped at" => null;
+  /// ReportsKitTests.Order · a label (a field, a list item, a menu entry) · at most ~27 characters
+  /// shown through ReportsKitTests.Order.RoastTime
+  /// beside: "Cafe", "Placed at", "Shipped at", "Kilos", "Value", "Margin"
+  label "Time in the roaster" => "Tid i rostern";
+
+  // ── ReportsKitTests.OrderLine ──
+  /// ReportsKitTests.OrderLine · a label (a field, a list item, a menu entry) · at most ~11 characters
+  /// shown through ReportsKitTests.OrderLine.Order
+  /// beside: "Coffee", "Kilos"
+  label "Order" => null;
+
+  // ── ReportsKitTests.OrderStatus ──
+  /// ReportsKitTests.OrderStatus · a label (a field, a list item, a menu entry) · at most ~15 characters
+  /// shown through ReportsKitTests.OrderStatus.Cancelled
+  /// beside: "Placed", "Roasting", "Shipped"
+  label "Cancelled" => null;
+  /// ReportsKitTests.OrderStatus · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through ReportsKitTests.OrderStatus.Placed
+  /// beside: "Roasting", "Shipped", "Cancelled"
+  label "Placed" => null;
+  /// ReportsKitTests.OrderStatus · a label (a field, a list item, a menu entry) · at most ~14 characters
+  /// shown through ReportsKitTests.OrderStatus.Roasting
+  /// beside: "Placed", "Shipped", "Cancelled"
+  label "Roasting" => null;
+
+  // ── ReportsKitTests.Person ──
+  /// ReportsKitTests.Person · a label (a field, a list item, a menu entry) · at most ~15 characters
+  /// shown through ReportsKitTests.Person.CodeHash
+  label "Code hash" => null;
+
+  // ── ReportsKitTests.Region ──
+  /// ReportsKitTests.Region · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through ReportsKitTests.Region.Name
+  /// also in ReportsKitTests.PriceList
+  /// also in ReportsKitTests.Cafe
+  label "Name" => null;
+
+  // ── TheLineReport ──
+  /// TheLineReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Coffees on the orders." => null;
+  /// TheLineReport · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through ReportDimension.Label
+  /// also in ReportsKitTests.OrderLine
+  label "Coffee" => null;
+  /// TheLineReport · a label (a field, a list item, a menu entry) · at most ~11 characters
+  /// shown through ReportMeasure.Label
+  /// also in ReportsKitTests.Order
+  label "Lines" => null;
+  /// TheLineReport · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through ReportDimension.Label
+  /// also in TheOrderReport
+  /// also in ReportsKitTests.Cafe
+  label "Region" => null;
+  /// TheLineReport · text on the page
+  /// shown through ReportSource.Nouns
+  text "lines" => null;
+  /// TheLineReport · a title
+  /// shown through ReportSource.Title
+  title "Order lines" => null;
+
+  // ── TheOrderReport ──
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Beans ordered, in kilos." => null;
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Half of the shipped orders left sooner than this." => null;
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Nine in ten shipped orders left sooner than this." => null;
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Orders not shipped yet, whenever placed." => null;
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Orders on their way." => null;
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Orders placed in the period." => null;
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "Shipped, of everything ordered." => null;
+  /// TheOrderReport · a hint under a field
+  /// shown through ReportMeasure.Hint
+  hint "What the cafés pay, in kronor." => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through ReportDimension.Label
+  label "Café" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through ReportDimension.Label
+  /// also in ReportsKitTests.Order
+  label "Courier" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~11 characters
+  /// shown through ReportMeasure.Label
+  /// also in ReportsKitTests.Order
+  /// also in ReportsKitTests.OrderLine
+  label "Kilos" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through ReportMeasure.Label
+  label "Orders" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~9 characters
+  /// shown through ReportDimension.Label
+  /// also in ReportsKitTests.Cafe
+  label "Rep" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through ReportMeasure.Label
+  /// also in ReportsKitTests.OrderStatus
+  label "Shipped" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~19 characters
+  /// shown through ReportMeasure.Label
+  label "Shipped share" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through ReportDimension.Label
+  /// also in ReportsKitTests.Order
+  label "Status" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~18 characters
+  /// shown through ReportMeasure.Label
+  label "Time to ship" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~38 characters
+  /// shown through ReportMeasure.Label
+  label "Time to ship, slowest tenth" => null;
+  /// TheOrderReport · a label (a field, a list item, a menu entry) · at most ~21 characters
+  /// shown through ReportMeasure.Label
+  label "Waiting to ship" => null;
+  /// TheOrderReport · text on the page
+  /// shown through ReportSource.Nouns
+  text "orders" => null;
+  /// TheOrderReport · a title
+  /// shown through ReportSource.Title
+  title "Orders" => null;
+}

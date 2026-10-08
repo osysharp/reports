@@ -1,0 +1,69 @@
+// THE FIGURES — what a report answers over the roastery's September, each worked out by hand from the table in
+// roastery.test.osy. Everything here is computed in the database (one grouped statement per report); these check the
+// answers, the server suite checks the statements.
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+[Test(Roastery)]
+[runas(Olle)]
+void the_curated_totals_for_the_last_30_days_are_the_septembers_seven_orders() {
+  var a = RunSourceReport("orders", Orders([Curated("orders"), Curated("kilos"), Curated("value"), Curated("shipped"),
+                                            Curated("shippedShare"), Curated("shipMedian"), Curated("shipP90")]),
+                          PeriodPreset.Last30Days);
+  Assert.Equal("", a.Result.Problem);
+  Assert.Equal("1 Sep – 30 Sep 2026", a.Period);
+  // 7 orders · 62 kg · 14,680 kr · 4 shipped · 4 of 7 shipped · shipped after 6, 24, 24 and 48 hours: the median is 24 h,
+  // and the 90th percentile 24 + 0.7 × 24 = 40.8 hours.
+  Assert.Equal("7 | 62 | 14,680 | 4 | 57.1% | 24 h | 40 h 48 min", RowText(a.Result, 0));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void grouping_by_region_follows_order_cafe_region_and_counts_each_order_once() {
+  var a = RunSourceReport("orders", Orders([Curated("orders"), Curated("kilos")],
+                                           groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]),
+                          PeriodPreset.Last30Days);
+  // City: o5, o6, o8 (19 kg) · Coast: o3, o4 (28 kg) · North: o1, o2 (15 kg). Largest first, then by name.
+  Assert.Equal("City | 3 | 19\nCoast | 2 | 28\nNorth | 2 | 15", Rows(a.Result));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_trend_by_day_has_a_zero_for_every_day_nothing_was_ordered() {
+  var a = RunSourceReport("orders", Orders([Curated("orders")],
+                                           groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.PlacedAt) }]),
+                          PeriodPreset.Last7Days);
+  // 24–30 September: one order on the 28th and one on the 30th; five quiet days in between are zeros, not gaps.
+  Assert.Equal(7, a.Result.Rows.Count);
+  Assert.Equal("24 Sep 2026 | 0", RowText(a.Result, 0));
+  Assert.Equal("28 Sep 2026 | 1", RowText(a.Result, 4));
+  Assert.Equal("30 Sep 2026 | 1", RowText(a.Result, 6));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void across_the_lines_collection_an_order_with_two_lines_of_one_coffee_counts_once() {
+  var a = RunSourceReport("orders", Orders([Curated("orders")],
+                                           groups: [new ExploreGroup { Field = "Lines.Coffee" }]),
+                          PeriodPreset.Last30Days);
+  // Kenya AA is on o1, o2, o3 and twice on o6 — four orders, not five. A plain join would say five.
+  Assert.Equal("Brazil | 2\nEthiopia | 2\nKenya AA | 4", Rows(a.Result));
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_measure_that_needs_a_number_is_refused_with_a_sentence() {
+  var a = RunSourceReport("orders", Orders([new ExploreMeasure { Name = "avg", Kind = MeasureKind.Average,
+                                                                 Field = Explore.Path<Order>(o => o.Cafe.Name) }]),
+                          PeriodPreset.Last30Days);
+  Assert.Contains("needs a number or a duration", a.Result.Problem);
+}
+
+[Test(Roastery)]
+[runas(Olle)]
+void the_period_before_is_the_one_a_change_is_measured_against() {
+  var a = RunSourceReport("orders", Orders([Curated("orders")]), PeriodPreset.ThisMonth, compare: true);
+  Assert.Equal("1 Aug – 31 Aug 2026", a.PeriodBefore);
+  Assert.Equal("1", RowText(a.Before!, 0));
+}

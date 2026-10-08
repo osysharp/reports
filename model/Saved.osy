@@ -1,0 +1,116 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Identity;
+using Osysharp.Explore;
+
+// ── saved reports ─────────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚑ A SAVED REPORT IS A QUESTION, NEVER AN ANSWER. It keeps the query — the fields, the groupings, the period — and runs
+//   it again for whoever opens it, as them. Sharing one with the team shares the question: each person who opens it sees
+//   their own rows (SECURITY-INVARIANT reports-run-as-the-viewer). No number is ever stored here.
+// ⚑ A FIELD THE MODEL NO LONGER HAS is said by name when the report is opened ("'Customer › Region' is not a field you can
+//   report on…") rather than silently dropped — a dropped filter widens the answer, which is the wrong-looking-right kind
+//   of wrong.
+
+/// A report a person saved — theirs, or shared with everybody who reads reports.
+[Unique(Owner, Source, Name, "You already have a report with that name. Choose another, or save over it.")]
+public entity SavedReport {
+  [Required("Name the report."), MaxLength(80)] string Name;
+  /// The source it starts from — its `ReportSource.Key`.
+  [Required, MaxLength(60)] string Source;
+  /// Who saved it. Only they change it, unless it is shared and the reader may share reports.
+  [Required] Principal Owner;
+  /// Everybody who reads reports may open it.
+  bool Shared = false;
+  /// The query, as JSON — the fields, groupings, measures, filters and period preset.
+  [Required, MaxLength(20000)] string Query;
+  /// The period it opens on.
+  PeriodPreset Period = PeriodPreset.Last30Days;
+  /// The two days of a period somebody chose (`PeriodPreset.Custom`) — empty for every other period.
+  DateOnly? FirstDay;
+  DateOnly? LastDay;
+  DateTime SavedAt = DateTime.UtcNow;
+
+  security {
+    // SECURITY-INVARIANT(reports-a-saved-report-is-its-owners): a report is read by its owner, and by everybody who reads
+    // reports once it is shared; only its owner changes or removes it — or, for a shared one, whoever may share reports.
+    // Guarded by kits/reports/tests/saved.test.osy `a_private_report_is_its_owners_and_a_shared_one_is_everybodys`.
+    allow read when ReadsReports where Owner == user || Shared;
+    allow create when ReadsReports where Owner == user && (!Shared || SharesReports);
+    allow update, delete when ReadsReports where Owner == user;
+    allow update, delete when ReadsReports && SharesReports where Shared;
+    deny update Owner, Source;
+  }
+}
+
+/// One saved report, as a list shows it.
+public class SavedReportLine {
+  public Guid Id;
+  public string Name = "";
+  public bool Shared;
+  public bool Mine;
+  public string Owner = "";
+}
+
+/// The reports the reader may open for the source filed under `key` — their own first, then the shared ones.
+[Authorize(ReadsReports)]
+[SuppressWarning("cost-unbounded-read")]   // one source's saved reports — the ones people chose to keep
+public List<SavedReportLine> SavedReportsFor(string key) {
+  var me = Session.CurrentUser;
+  var meId = me == null ? Guid.Empty : me.Id;
+  List<SavedReportLine> lines = [];
+  // With each one's owner, whom every line names.
+  foreach (var r in SavedReport.Where(r => r.Source == key).Include(r => r.Owner).OrderBy(r => r.Name).ToList()) {
+    lines.Add(new SavedReportLine { Id = r.Id, Name = r.Name, Shared = r.Shared, Mine = r.Owner.Id == meId,
+                                    Owner = r.Owner.DisplayName ?? "" });
+  }
+  return lines.OrderByDescending(l => l.Mine).ToList();
+}
+
+/// Saves `query` under `name` for the reader — over their own report of that name when there is one. `shared`: for
+/// everybody who reads reports (only somebody who may share reports may). `first`/`last`: the days of a period somebody
+/// chose (`PeriodPreset.Custom`). Answers the saved report's id.
+[Authorize(ReadsReports)]
+public Guid SaveReport(string key, string name, ExploreQuery query, PeriodPreset period, bool shared, DateOnly? first = null,
+                       DateOnly? last = null) {
+  var me = Session.CurrentUser;
+  if (me == null) { throw new ValidationException("Sign in to save a report."); }
+  if (ReportSourceOrNull(key) == null) { throw new ValidationException("This app does not report on that."); }
+  var trimmed = name.Trim();
+  if (trimmed == "") { throw new ValidationException("Name the report."); }
+  var text = JsonSerializer.Serialize(query);
+  var chosen = period == PeriodPreset.Custom;
+  var existing = SavedReport.FirstOrDefault(r => r.Owner == me && r.Source == key && r.Name == trimmed);
+  if (existing != null) {
+    existing.Query = text;
+    existing.Period = period;
+    existing.FirstDay = chosen ? first : null;
+    existing.LastDay = chosen ? last : null;
+    existing.Shared = shared;
+    existing.SavedAt = DateTime.UtcNow;
+    UnitOfWork.Commit();
+    return existing.Id;
+  }
+  var saved = new SavedReport { Name = trimmed, Source = key, Owner = me!, Shared = shared, Query = text, Period = period,
+                                FirstDay = chosen ? first : null, LastDay = chosen ? last : null };
+  UnitOfWork.Commit();
+  return saved.Id;
+}
+
+/// A saved report's query, to open — or null when the reader may not open it.
+[Authorize(ReadsReports)]
+public ExploreQuery? OpenSavedReport(Guid id) {
+  var r = SavedReport.FirstOrDefault(x => x.Id == id);
+  if (r == null) { return null; }
+  return JsonSerializer.Deserialize<ExploreQuery>(r.Query);
+}
+
+/// Removes a saved report. Answers false when the reader may not.
+[Authorize(ReadsReports)]
+public bool DeleteSavedReport(Guid id) {
+  var r = SavedReport.FirstOrDefault(x => x.Id == id);
+  if (r == null) { return false; }
+  r.Delete();
+  UnitOfWork.Commit();
+  return true;
+}

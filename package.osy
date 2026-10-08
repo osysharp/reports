@@ -1,0 +1,38 @@
+// Osysharp.Reports — reports a team builds for itself, and the overviews an app declares: start from ONE thing the app
+// keeps (an order, a ticket, a candidate), pick fields by following its relations (Order › Customer › Region), group,
+// measure and filter — and read the answer as figures, a table and a chart, live as the fields are picked, exported
+// as a CSV that says what the screen says, and saved by name for oneself or the whole team.
+//
+// ⚑ THE PLATFORM COMPILES, THE KIT COMPOSES. Every report is an `ExploreQuery` (`Osysharp.Explore`): the platform turns
+//   the picked paths into ONE secured SQL statement — joins, GROUP BY, percentiles — and answers only the aggregated
+//   rows. The kit never builds SQL, never reads a row to add it up, and never sees a value its reader may not read: a
+//   related field the reader cannot read is not offered (SECURITY-INVARIANT reports-model-is-closed), and every
+//   report runs as its reader (reports-run-as-the-viewer) — a shared report shows each person their own rows.
+//
+// ⚑ THE APP SAYS WHAT IT REPORTS ON, ONCE — a class implementing `IReportSource` per root, describing a `ReportSource`:
+//   the app's own words for its measures and groupings (its "semantic layer"). The kit finds them without being listed.
+//   Everything else a reader may reach is offered too, by the platform, from the model.
+//
+// ⚑ LEAN CORE, ADD-ON SPECIALISTS. This kit carries figures, a table, a line/column chart (from `Osysharp.Charts`), the
+//   builder and saved reports. A funnel, a heatmap, a gauge, scheduled delivery — add-on kits over the same query.
+//
+// Design: Docs/OsySharp/reports_kit_design.md (D-REPORTS1). Docs: osy docs reports-kit.
+package Osysharp.Reports {
+  version     "0.4.0";
+  minPlatform "0.9.0";
+  summary     "reports a team builds for itself — start from one thing the app keeps, pick fields by following its relations, group, measure (counts, totals, averages, medians and percentiles) and filter, all computed in the database as the reader may read it — read as figures, a table and a chart, exported as CSV, saved and shared by name.";
+  model "model/**/*.osy";
+  use Osysharp.Identity@0;
+  // The compiler every report runs through — the platform's.
+  use Osysharp.Explore;
+  // The clock a day, a week and a month are counted on — the app's one time-zone setting.
+  use Osysharp.Clock@0;
+  // The chart under a grouping — line and column, from the Charts kit.
+  use Osysharp.Charts@1;
+  // A CSV export, written so a spreadsheet opens it the same way everywhere…
+  use Osysharp.Csv@0;
+  // …kept as a file, and handed back as a short-lived link.
+  use Osysharp.Storage;
+  use Osysharp.Ui;
+  tests "tests";
+}

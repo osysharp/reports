@@ -1,0 +1,76 @@
+// SAVED REPORTS — a question kept by name, never its numbers. A person's own is theirs; a shared one is everybody's who
+// reads reports, and each person who opens it sees their own rows. A field the opener cannot read stays in the report,
+// named, rather than quietly widening it.
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+ExploreQuery ByRegion() {
+  return Orders([Curated("orders")], groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]);
+}
+
+[Test(Roastery)]
+void a_private_report_is_its_owners_and_a_shared_one_is_everybodys() {
+  runas (Ada) { SaveReport("orders", "My regions", ByRegion(), PeriodPreset.Last30Days, false); }
+  runas (Bo) { Assert.Equal(0, SavedReportsFor("orders").Count); }
+  runas (Olle) {
+    Assert.Equal(0, SavedReportsFor("orders").Count);
+    SaveReport("orders", "Orders by region", ByRegion(), PeriodPreset.Last30Days, true);
+  }
+  runas (Ada) {
+    var mine = SavedReportsFor("orders");
+    Assert.Equal("My regions, Orders by region", String.Join(", ", mine.Select(l => l.Name)));
+    Assert.True(mine[0].Mine);
+    Assert.True(mine[1].Shared);
+  }
+  // Bo opens the shared one and sees his own rows.
+  runas (Bo) {
+    var shared = SavedReportsFor("orders").Single();
+    var opened = OpenReport(shared.Id)!;
+    Assert.Equal("City | 1\nCoast | 1", Rows(RunSourceReport("orders", opened.Query, opened.Period).Result));
+  }
+}
+
+[Test(Roastery)]
+void only_somebody_who_may_share_reports_shares_one() {
+  runas (Ada) {
+    Assert.Throws(() => SaveReport("orders", "For everybody", ByRegion(), PeriodPreset.Last30Days, true));
+  }
+}
+
+[Test(Roastery)]
+void nobody_changes_or_removes_somebody_elses_report() {
+  Guid id = Guid.Empty;
+  runas (Ada) { id = SaveReport("orders", "Mine", ByRegion(), PeriodPreset.Last30Days, false); }
+  runas (Bo) { Assert.False(DeleteSavedReport(id)); }
+  runas (Ada) { Assert.True(DeleteSavedReport(id)); }
+}
+
+[Test(Roastery)]
+void saving_again_under_the_same_name_saves_over_it() {
+  runas (Ada) {
+    SaveReport("orders", "Mine", ByRegion(), PeriodPreset.Last30Days, false);
+    SaveReport("orders", "Mine", Orders([Curated("kilos")]), PeriodPreset.ThisMonth, false);
+    var lines = SavedReportsFor("orders");
+    Assert.Equal(1, lines.Count);
+    Assert.Equal(PeriodPreset.ThisMonth, OpenReport(lines[0].Id)!.Period);
+  }
+}
+
+[Test(Roastery)]
+void a_shared_report_naming_a_field_the_opener_cannot_read_says_so_instead_of_answering_less() {
+  var margin = Explore.Path<Order>(o => o.Margin);
+  runas (Olle) {
+    SaveReport("orders", "Margin by region",
+               Orders([new ExploreMeasure { Name = "margin", Kind = MeasureKind.Sum, Field = margin }],
+                      groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]),
+               PeriodPreset.Last30Days, true);
+  }
+  runas (Ada) {
+    var opened = OpenReport(SavedReportsFor("orders").Single().Id)!;
+    var a = RunSourceReport("orders", opened.Query, opened.Period);
+    Assert.Equal(0, a.Result.Rows.Count);
+    Assert.Contains(margin, a.Result.Unreachable);
+    Assert.Contains("not a field you can report on", a.Result.Problem);
+  }
+}

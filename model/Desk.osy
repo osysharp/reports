@@ -1,0 +1,220 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Identity;
+using Osysharp.Explore;
+using Osysharp.Clock;
+
+// ── what the builder asks the server ──────────────────────────────────────────────────────────────────────────────────
+//
+// ⚑ THE PERIOD IS THE SERVER'S. "Last 30 days" is read on the app's clock (Settings › Time and date, `Osysharp.Clock`),
+//   which only the server holds; the builder sends the preset and gets the answer with the period's words. The page never computes a day.
+
+/// What the builder opens with: the source in the app's words, every field the reader may reach from its root, and
+/// their saved reports.
+public class ReportDesk {
+  public ReportSource Source = new ReportSource();
+  public List<ExploreField> Fields = [];
+  public List<SavedReportLine> Saved = [];
+}
+
+/// The desk for the source filed under `key`, as the reader may reach it — null when the app has no such source.
+[Authorize(ReadsReports)]
+public ReportDesk? OpenReportDesk(string key) {
+  var source = ReportSourceOrNull(key);
+  if (source == null) { return null; }
+  return new ReportDesk { Source = source, Fields = Explore.Fields(source.Root, 3, ReportPivots()), Saved = SavedReportsFor(key) };
+}
+
+/// An answer, with the period it covers in words — and, when asked, the same report over the period before it, for a
+/// figure's change.
+public class ReportAnswer {
+  public ExploreResult Result = new ExploreResult();
+  public ExploreResult? Before;
+  public string Period = "";
+  public string PeriodBefore = "";
+  public TimeBucket Bucket = TimeBucket.Day;
+}
+
+/// Runs `query` over the source filed under `key` for the period `preset` names (`first`/`last` for a custom one), on
+/// the report clock: the source's date is kept to the period, a date grouping with no bucket of its own takes the
+/// period's, and a trend gets a zero for every bucket nothing fell in — a quiet day is a zero on the chart, never a gap.
+/// `compare`: also the period before it, for each figure's change.
+[Authorize(ReadsReports)]
+public ReportAnswer RunSourceReport(string key, ExploreQuery query, PeriodPreset preset, DateOnly? first = null,
+                                    DateOnly? last = null, bool compare = false) {
+  var source = ReportSourceOrNull(key);
+  if (source == null) { return new ReportAnswer { Result = new ExploreResult { Problem = "This app does not report on that." } }; }
+  var period = PeriodOf(preset, DateTime.UtcNow, TheClock(), first, last);
+  var answer = new ReportAnswer { Result = RunOver(source, query, period), Period = PeriodWords(period), Bucket = period.Bucket };
+  if (compare) {
+    var before = PreviousOf(period);
+    answer.Before = RunOver(source, query, before);
+    answer.PeriodBefore = PeriodWords(before);
+  }
+  return answer;
+}
+
+/// THE ROWS A FIGURE COUNTS — a drill-through. The source's `RowFields` of every root row in the period that the report's
+/// conditions admit, narrowed to one group (`row` of a result whose columns are `columns`: each grouped column's own
+/// value) and by the measure `measure`'s own conditions (a ratio's are its denominator's), so the rows listed are exactly
+/// the rows that figure counted. No `row`: the period's totals. At most `limit`; the answer says when there were more.
+[Authorize(ReadsReports)]
+public ReportAnswer RunSourceRows(string key, ExploreQuery query, string measure, PeriodPreset preset, DateOnly? first = null,
+                                  DateOnly? last = null, List<ExploreColumn>? columns = null, ExploreRow? row = null,
+                                  int limit = 200) {
+  var source = ReportSourceOrNull(key);
+  if (source == null) { return new ReportAnswer { Result = new ExploreResult { Problem = "This app does not report on that." } }; }
+  if (source.RowFields.Count == 0) {
+    return new ReportAnswer { Result = new ExploreResult { Problem = "This report does not list the rows it counts." } };
+  }
+  var period = PeriodOf(preset, DateTime.UtcNow, TheClock(), first, last);
+  List<ExploreFilter> filters = columns == null || row == null ? [] : GroupNarrowing(columns!, row!, query.GroupBy, period);
+  var counted = MeasureNamed(query, source, measure);
+  if (counted != null && counted!.Kind == MeasureKind.Ratio) { counted = MeasureNamed(query, source, counted!.Denominator); }
+  if (counted != null) { foreach (var f in counted!.Where) { filters.Add(f); } }
+  var rows = new ExploreQuery { Root = source.Root, Columns = source.RowFields.ToArray(), Limit = limit,
+                                Where = new ExploreFilterGroup { Filters = filters, Groups = [query.Where] } };
+  return new ReportAnswer { Result = RunOver(source, rows, period), Period = PeriodWords(period), Bucket = period.Bucket };
+}
+
+/// The measure named `name` — the report's own, else one the source declares.
+ExploreMeasure? MeasureNamed(ExploreQuery query, ReportSource source, string name) {
+  foreach (var m in query.Measures) { if (m.Name == name) { return m; } }
+  foreach (var m in source.Measures) { if (m.Measure.Name == name) { return m.Measure; } }
+  return null;
+}
+
+/// The conditions that select ONE GROUP — `row` of a result whose columns are `columns` — for a drill-through: each
+/// grouped column's own value (`ExploreCell.Key`), an empty value as "is empty", and a date bucket as its span on the
+/// report's clock.
+public List<ExploreFilter> GroupNarrowing(List<ExploreColumn> columns, ExploreRow row, List<ExploreGroup> groups, ReportPeriod period) {
+  List<ExploreFilter> narrow = [];
+  for (var j = 0; j < columns.Count && j < row.Cells.Count; j++) {
+    var c = columns[j];
+    if (c.IsMeasure || c.Field == "") { continue; }
+    var cell = row.Cells[j];
+    if (cell.Empty) { narrow.Add(new ExploreFilter { Field = c.Field, Op = FilterOp.IsEmpty }); continue; }
+    // A date is grouped in buckets — the group's own, else the period's (as the report ran it) — so its rows are the
+    // bucket's span, not the one instant it starts at.
+    if (c.Kind == FieldKind.Date && cell.Instant != null) {
+      var grouped = groups.FirstOrDefault(g => g.Field == c.Field);
+      var bucket = grouped != null && grouped!.Bucket != null ? grouped!.Bucket!.Value : period.Bucket;
+      var start = cell.Instant!.Value;
+      narrow.Add(new ExploreFilter { Field = c.Field, Op = FilterOp.Between,
+                                     Values = [start.ToString("o"), BucketEnd(start, bucket, period).ToString("o")] });
+      continue;
+    }
+    narrow.Add(new ExploreFilter { Field = c.Field, Op = FilterOp.Is, Values = [cell.Key], Labels = [cell.Text] });
+  }
+  return narrow;
+}
+
+/// The first instant after the bucket that starts at `start` — counted on the report's clock, so a day across the change
+/// to summer time still ends at the next midnight.
+DateTime BucketEnd(DateTime start, TimeBucket bucket, ReportPeriod period) {
+  if (bucket == TimeBucket.Hour) { return start.AddHours(1); }
+  var day = DateOnly.FromDateTime(start.InZone(period.Zone));
+  var next = bucket == TimeBucket.Day ? day.AddDays(1)
+    : bucket == TimeBucket.Week ? day.AddDays(7)
+    : bucket == TimeBucket.Month ? day.AddMonths(1)
+    : bucket == TimeBucket.Quarter ? day.AddMonths(3)
+    : day.AddYears(1);
+  return period.Zone.Resolve(next, new TimeOnly(0, 0));
+}
+
+/// Runs `query` over the source filed under `key` AS THINGS STAND — no period: what is open now, whenever it arrived.
+/// For a backlog, never for a count of what happened (that has a period, and `RunSourceReport` keeps it).
+[Authorize(ReadsReports)]
+public ExploreResult RunSourceNow(string key, ExploreQuery query) {
+  var source = ReportSourceOrNull(key);
+  if (source == null) { return new ExploreResult { Problem = "This app does not report on that." }; }
+  var clock = TheClock();
+  var q = JsonSerializer.Deserialize<ExploreQuery>(JsonSerializer.Serialize(query));
+  q.Root = source.Root;
+  q.Zone = clock.TimeZone;
+  q.WeekStart = clock.WeekStart;
+  q.Pivots = ReportPivots();
+  return Explore.Run(q);
+}
+
+/// `query` kept to `period` on its source's date, and run as the reader.
+ExploreResult RunOver(ReportSource source, ExploreQuery query, ReportPeriod period) {
+  var q = JsonSerializer.Deserialize<ExploreQuery>(JsonSerializer.Serialize(query));
+  q.Root = source.Root;
+  q.Zone = period.Zone;
+  q.WeekStart = period.WeekStart;
+  q.Pivots = ReportPivots();
+  foreach (var g in q.GroupBy) {
+    if (g.Bucket == null && IsDateField(source, g.Field)) { g.Bucket = period.Bucket; }
+  }
+  // The period is ONE MORE condition beside everything the report says: all of (the period, the report's own tree).
+  if (source.Date != "") { q.Where = new ExploreFilterGroup { Filters = [InPeriod(source.Date, period)], Groups = [q.Where] }; }
+  var result = Explore.Run(q);
+  if (result.Problem == "" && q.GroupBy.Count == 1 && q.GroupBy[0].Bucket != null && result.Columns.Count > 0
+      && result.Columns[0].Kind == FieldKind.Date && q.GroupBy[0].Bucket == period.Bucket) {
+    return EveryBucket(result, period);
+  }
+  return result;
+}
+
+/// Is `path` a date field of the source — as the model says, read the way the builder reads it? Only a date takes the
+/// period's bucket on its own.
+bool IsDateField(ReportSource source, string path) {
+  if (path == source.Date) { return true; }
+  var depth = path.Split('.').Length - 1;
+  return Explore.Fields(source.Root, depth, ReportPivots()).Any(f => f.Path == path && f.Kind == FieldKind.Date);
+}
+
+/// A trend with every bucket of `period` in it, in order: what the database answered, and a zero (or "–" for a measure
+/// with no value over nothing) for each bucket nothing fell in.
+ExploreResult EveryBucket(ExploreResult result, ReportPeriod period) {
+  List<ExploreRow> rows = [];
+  foreach (var start in BucketsOf(period)) {
+    var found = result.Rows.FirstOrDefault(r => r.Cells[0].Instant != null && r.Cells[0].Instant!.Value == start);
+    if (found != null) { rows.Add(found); continue; }
+    List<ExploreCell> cells = [new ExploreCell { Instant = start }];
+    for (var i = 1; i < result.Columns.Count; i = i + 1) {
+      var counted = result.Columns[i].IsMeasure && result.Columns[i].Kind == FieldKind.Number;
+      cells.Add(counted ? new ExploreCell { Number = 0m } : new ExploreCell { Empty = true });
+    }
+    rows.Add(new ExploreRow { Cells = cells });
+  }
+  return new ExploreResult { Columns = result.Columns, Rows = rows, Truncated = result.Truncated };
+}
+
+/// The rows a reference filter may pick — the records of `path`'s entity whose name holds `search`, as the reader may
+/// read them, at most twenty.
+[Authorize(ReadsReports)]
+public List<ExploreChoice> ReportChoices(string key, string path, string search) {
+  var source = ReportSourceOrNull(key);
+  if (source == null) { return []; }
+  return Explore.Choices(source.Root, path, search, 20);
+}
+
+/// A date filter's two values for `preset` on the app's clock — [first instant, first instant after).
+[Authorize(ReadsReports)]
+public string[] DateFilterValues(PeriodPreset preset, DateOnly? first = null, DateOnly? last = null) {
+  var p = PeriodOf(preset, DateTime.UtcNow, TheClock(), first, last);
+  return [p.From.ToString("o"), p.To.ToString("o")];
+}
+
+/// What a saved report opens with — its query and its period.
+public class SavedReportOpen {
+  public Guid Id;
+  public string Name = "";
+  public bool Shared;
+  public ExploreQuery Query = new ExploreQuery();
+  public PeriodPreset Period = PeriodPreset.Last30Days;
+  /// The days of a chosen period (`PeriodPreset.Custom`).
+  public DateOnly? FirstDay;
+  public DateOnly? LastDay;
+}
+
+/// Opens the saved report `id` — or null when the reader may not.
+[Authorize(ReadsReports)]
+public SavedReportOpen? OpenReport(Guid id) {
+  var r = SavedReport.FirstOrDefault(x => x.Id == id);
+  if (r == null) { return null; }
+  return new SavedReportOpen { Id = r.Id, Name = r.Name, Shared = r.Shared, Period = r.Period, FirstDay = r.FirstDay,
+                               LastDay = r.LastDay, Query = JsonSerializer.Deserialize<ExploreQuery>(r.Query) };
+}

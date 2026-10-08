@@ -1,0 +1,18 @@
+// The producer's test project for Osysharp.Reports — a coffee roaster's wholesale orders: cafés in three regions order
+// beans, a courier ships them, and the roastery wants to know how much went where, how fast, and to whom.
+// NOT a helpdesk on purpose: the kit knows nothing of tickets, and this app reports on its own `Order` rows.
+app ReportsKitTests {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.Identity@0;
+  use Osysharp.Reports@0;
+  // The clock a report's days are counted on.
+  use Osysharp.Clock@0;
+  use Osysharp.Explore;
+  use Osysharp.Charts@1;
+  use Osysharp.Csv@0;
+  use Osysharp.Storage;
+  use Osysharp.Ui;
+  // "Who changed this and when" on the settings page.
+  use Osysharp.Observability;
+}

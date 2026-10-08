@@ -1,0 +1,128 @@
+namespace Osysharp.Reports;
+
+using Osysharp.Identity;
+using Osysharp.Explore;
+
+// ── what the app says ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// Who reads reports — builds one, opens a saved one, exports it. `policy ReadsReports => IsStaff;`
+/// ⚑ A report shows each reader only the rows THEY may read; this policy decides who may open the builder at all.
+policy ReadsReports;
+
+/// Who may share a saved report with everybody who reads reports, and change the shared ones. `policy SharesReports => IsLead;`
+policy SharesReports;
+
+/// One thing the app reports on, found without being listed — every class in the app implementing it is a source:
+///
+///     public class OrderReports : IReportSource {
+///       public ReportSource Describe() { return new ReportSource { Key = "orders", Root = Explore.Root<Order>(), … }; }
+///     }
+///
+/// ⚑ NOT AN APP SETTING: a setting may hold credentials, so nothing read from one may reach a page — and a builder has to
+///   show the source's words. A source is plain words and paths, and discovered (`App.Implementations`) instead.
+public interface IReportSource {
+  ReportSource Describe();
+}
+
+/// Every source the app reports on.
+public List<ReportSource> ReportSources() {
+  return App.Implementations<IReportSource>().Select(s => s.Describe()).ToList();
+}
+
+/// How a figure is read. ⚠ Appended, never inserted: a saved report stores it by position.
+public enum FigureFormat {
+  /// A whole number of things — 1,204.
+  [Label("Count")] Count,
+  /// A number with decimals — 4.25.
+  [Label("Number")] Number,
+  /// A share, stored as a fraction — 0.932 reads 93.2%.
+  [Label("Percent")] Percent,
+  /// A length of time — 1 h 12 min.
+  [Label("Duration")] Duration,
+  /// A day or an instant.
+  [Label("Date")] Date
+}
+
+/// A measure the app names — "Orders", "Median time to ship" — in its own words, with how it reads and which way is
+/// better (a falling resolution time is good news).
+public class ReportMeasure {
+  /// The measure as the query runs it. Its `Name` is how a saved report names it.
+  public ExploreMeasure Measure = new ExploreMeasure();
+  /// The key of the source it belongs to — set by `Keyed(source)`, so an overview of one source can show another's
+  /// measure by reference. "" reads as the overview's own source.
+  public string Source = "";
+  /// What a person reads — "Median time to ship".
+  public string Label = "";
+  /// One line on what it counts, shown under the figure and in the builder.
+  public string Hint = "";
+  public FigureFormat Format = FigureFormat.Count;
+  /// A rise is good news (orders) — false when a fall is (time to resolve).
+  public bool HigherIsBetter = true;
+}
+
+/// A grouping the app names — "Region", "Courier" — with the field it groups by.
+public class ReportDimension {
+  /// The path from the root — `Explore.Path<Order>(o => o.Customer.Region)`.
+  public string Field = "";
+  public string Label = "";
+}
+
+/// ONE THING A TEAM REPORTS ON: a root entity (`Explore.Root<Order>()`) and the app's words for it. The builder offers
+/// these measures and groupings first ("curated"), and every other field the reader may reach after them.
+public class ReportSource {
+  /// The name saved reports file under — said once. Renaming it leaves reports saved under the old key unopened.
+  public string Key = "";
+  /// "Orders".
+  public string Title = "";
+  /// The entity counted — `Explore.Root<Order>()`.
+  public string Root = "";
+  /// What one root row is called, in the singular and the plural — "order", "orders".
+  public string Noun = "row";
+  public string Nouns = "rows";
+  /// The date a period applies to — `Explore.Path<Order>(o => o.PlacedAt)`. "" for a source with no date.
+  public string Date = "";
+  public List<ReportMeasure> Measures = [];
+  public List<ReportDimension> Dimensions = [];
+  /// The paths a row list shows when a person opens the rows behind a figure — the reference, the title, the date.
+  public List<string> RowFields = [];
+  /// The app's own word for a field the model names otherwise — `Assignee` is "Agent", `Organization` is "Company" —
+  /// so the builder speaks the app's language (and, through `Translate`, the reader's). The groupings' labels count
+  /// too; these are for the fields that are not groupings.
+  public List<ReportDimension> FieldWords = [];
+}
+
+/// `source` with every measure marked as its own — so the measures can be handed around by reference (to an overview
+/// of another source, say) and still say where they come from. Answers the same source.
+public ReportSource Keyed(ReportSource source) {
+  foreach (var m in source.Measures) { m.Source = source.Key; }
+  return source;
+}
+
+/// The app's word for the field at `path`, or `fallback` (the model's) — from the source's groupings, then its
+/// `FieldWords`.
+internal string FieldWord(ReportSource source, string path, string fallback) {
+  foreach (var d in source.Dimensions) { if (d.Field == path && d.Label != "") { return d.Label; } }
+  foreach (var w in source.FieldWords) { if (w.Field == path && w.Label != "") { return w.Label; } }
+  return fallback;
+}
+
+/// The rows the app's kits read as COLUMNS — a record's custom fields, say (`IExplorePivots`, found without being listed).
+/// Every field list and every query the builder runs carries them, so "Customer › Their plan" is a field like any other.
+public List<ExplorePivot> ReportPivots() {
+  List<ExplorePivot> all = [];
+  foreach (var p in App.Implementations<IExplorePivots>()) { all.AddRange(p.Pivots()); }
+  return all;
+}
+
+/// The source filed under `key`, or null.
+public ReportSource? ReportSourceOrNull(string key) {
+  foreach (var s in ReportSources()) { if (s.Key == key) { return s; } }
+  return null;
+}
+
+/// The source whose root is `root`, or null — what a query that came from a page is checked against.
+ReportSource? SourceForRoot(string root) {
+  foreach (var s in ReportSources()) { if (s.Root == root) { return s; } }
+  return null;
+}
+
