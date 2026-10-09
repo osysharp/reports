@@ -16,9 +16,9 @@
 // ⚑ LEAN CORE, ADD-ON SPECIALISTS. This kit carries figures, a table, a line/column chart (from `Osysharp.Charts`), the
 //   builder and saved reports. A funnel, a heatmap, a gauge, scheduled delivery — add-on kits over the same query.
 //
-// Design: Docs/OsySharp/reports_kit_design.md (D-REPORTS1). Docs: osy docs reports-kit.
+// Docs: osy docs reports-kit.
 package Osysharp.Reports {
-  version     "0.4.1";
+  version "0.4.2";
   minPlatform "0.9.0";
   summary     "reports a team builds for itself — start from one thing the app keeps, pick fields by following its relations, group, measure (counts, totals, averages, medians and percentiles) and filter, all computed in the database as the reader may read it — read as figures, a table and a chart, exported as CSV, saved and shared by name.";
   model "model/**/*.osy";

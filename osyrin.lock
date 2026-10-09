@@ -6,8 +6,8 @@
     {
       "name": "Osysharp.Charts",
       "kind": "package",
-      "version": "1.1.0",
-      "hash": "sha256:8532df9b8e3979e257295ab51d486b99eac08079ae1a771288e7902a07536653",
+      "version": "1.1.1",
+      "hash": "sha256:25aeecb6ccef942e8f96066f5d9500cffc93e4a027d2523340b5f5b9f3a22808",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/chart",
@@ -16,8 +16,8 @@
     {
       "name": "Osysharp.Clock",
       "kind": "package",
-      "version": "0.1.2",
-      "hash": "sha256:6c2bc35ceaf4d88ce5dc110c445e2140e04d996ec93ecd31c66a3a37dd0131fb",
+      "version": "0.1.3",
+      "hash": "sha256:d4a1236ceb0e0ea7ae289bdbeb26521baba0644b563b275faaa267a910ead0ad",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/clock",
@@ -54,8 +54,8 @@
     {
       "name": "Osysharp.Identity",
       "kind": "package",
-      "version": "0.8.0",
-      "hash": "sha256:7fadb5f2628cfd6895c44d2e88725b39055ea36c3a8276b3b345c72a931f4358",
+      "version": "0.8.1",
+      "hash": "sha256:83723f5577bbbb2aea58fbee2360a4e00db5c2cfd35f8532ce7be70be153b6fd",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/identity",
