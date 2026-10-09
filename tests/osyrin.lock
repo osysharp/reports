@@ -16,8 +16,8 @@
     {
       "name": "Osysharp.Clock",
       "kind": "package",
-      "version": "0.1.0",
-      "hash": "sha256:f682be329857e698e826c270ebe433ef152a3fb04ffd80d94ee15adc528af962",
+      "version": "0.1.2",
+      "hash": "sha256:6c2bc35ceaf4d88ce5dc110c445e2140e04d996ec93ecd31c66a3a37dd0131fb",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/clock",
@@ -26,8 +26,8 @@
     {
       "name": "Osysharp.Ui",
       "kind": "package",
-      "version": "2.17.1",
-      "hash": "sha256:17d6d844ed71d4d614d43a6993723da70b2d39241c31e9f9fb58250a5183263c",
+      "version": "2.18.1",
+      "hash": "sha256:5dae9b4103cc649967664228cc945c2d8b5bd9ff8d45e62bf9b67d9db079545e",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Ui"
@@ -45,8 +45,8 @@
     {
       "name": "Osysharp.Explore",
       "kind": "package",
-      "version": "1.2.0",
-      "hash": "sha256:94c4173ebb5eee7867d002514042580f019b1453faf4032bc482594daddbacfb",
+      "version": "1.2.1",
+      "hash": "sha256:81c980b4b48ddf969f5505763fad3a95ba15526b92a0b322dcfe095042c3f208",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Explore"
@@ -54,8 +54,8 @@
     {
       "name": "Osysharp.Identity",
       "kind": "package",
-      "version": "0.7.0",
-      "hash": "sha256:a8f780ee024fb27a6c1f909feb86fec10c8a176788acd8546d1380a9243575bd",
+      "version": "0.8.0",
+      "hash": "sha256:7fadb5f2628cfd6895c44d2e88725b39055ea36c3a8276b3b345c72a931f4358",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/identity",
@@ -64,8 +64,8 @@
     {
       "name": "Osysharp.Observability",
       "kind": "package",
-      "version": "1.0.0",
-      "hash": "sha256:aba8df0c3a7c56cfa752ad731283a5559ba21e6b04909ce580778518fe2f7196",
+      "version": "1.0.1",
+      "hash": "sha256:240f2b9d4a764186a4511669df519ad88399cc771ed87a643089a65ec25778f3",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Observability"
@@ -73,8 +73,8 @@
     {
       "name": "Osysharp.Reports",
       "kind": "package",
-      "version": "0.4.0",
-      "hash": "sha256:0a4b07abb7da4f8e0a9206491f4df12854c4c35d09020726dc61b6dc004db254",
+      "version": "0.4.1",
+      "hash": "sha256:76af7b5ebaf0a01e089bd0ca8f80e1318446d4e5e9e4fa6c6493c3c058bcda2b",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/reports",
@@ -83,8 +83,8 @@
     {
       "name": "Osysharp.Storage",
       "kind": "package",
-      "version": "1.2.0",
-      "hash": "sha256:0e45268f33acd5a0fe1dae3e886ab1d828824fc628f9a34efa81af746b0f57d0",
+      "version": "1.2.1",
+      "hash": "sha256:a344786f4417d7005fb72cb752389bc62ae3e8623fb2cce4b3982fc9b3c7699d",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Storage"

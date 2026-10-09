@@ -35,12 +35,12 @@ public class OrderReports : IReportSource {
   }
 }
 
-[Page("/reports")] [Authorize(ReadsReports)]
+[Route("/reports")] [Authorize(ReadsReports)]
 component OrdersOverview() {
   render { ReportOverview("orders", ["orders", "toShip"], build: "/reports/build"); }
 }
 
-[Page("/reports/build")] [Authorize(ReadsReports)]
+[Route("/reports/build")] [Authorize(ReadsReports)]
 component OrdersBuilder() {
   render { ReportBuilder("orders"); }
 }

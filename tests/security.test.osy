@@ -11,7 +11,7 @@ void the_same_report_shows_each_reader_only_the_orders_they_may_read() {
   runas (Olle) {
     Assert.Equal("City | 3\nCoast | 2\nNorth | 2", Rows(RunSourceReport("orders", byRegion, PeriodPreset.Last30Days).Result));
   }
-  // Ada looks after Northwind (o1, o2) and Fjord (o3).
+  // Ada looks after Larkspur (o1, o2) and Fjord (o3).
   runas (Ada) {
     Assert.Equal("Coast | 1\nNorth | 2", Rows(RunSourceReport("orders", byRegion, PeriodPreset.Last30Days).Result));
   }
@@ -59,7 +59,7 @@ void a_relation_into_what_a_rep_may_not_read_is_never_offered_and_a_filter_throu
 void picking_a_record_offers_only_the_records_the_reader_may_read() {
   runas (Ada) {
     var cafes = ReportChoices("orders", Explore.Path<Order>(o => o.Cafe), "");
-    Assert.Equal("Fjord Coffee, Northwind Café", String.Join(", ", cafes.Select(c => c.Text)));
+    Assert.Equal("Fjord Coffee, Larkspur Café", String.Join(", ", cafes.Select(c => c.Text)));
   }
 }
 

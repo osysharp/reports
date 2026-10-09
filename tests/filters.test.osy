@@ -78,16 +78,16 @@ void a_duration_is_more_than_a_length() {
 void text_contains_starts_with_or_is() {
   var name = Explore.Path<Order>(o => o.Cafe.Name);
   Assert.Equal(2, CountWhere(new ExploreFilter { Field = name, Op = FilterOp.Contains, Values = ["Coffee"] }));      // o3, o4
-  Assert.Equal(2, CountWhere(new ExploreFilter { Field = name, Op = FilterOp.StartsWith, Values = ["Corner"] }));   // o5, o8
+  Assert.Equal(2, CountWhere(new ExploreFilter { Field = name, Op = FilterOp.StartsWith, Values = ["Mill"] }));   // o5, o8
   Assert.Equal(1, CountWhere(new ExploreFilter { Field = name, Op = FilterOp.Is, Values = ["Kiln & Cup"] }));       // o6
 }
 
 [Test(Roastery)]
 [runas(Olle)]
 void a_record_is_picked_by_name_and_matched_by_its_row() {
-  var picks = ReportChoices("orders", Explore.Path<Order>(o => o.Cafe), "north");
+  var picks = ReportChoices("orders", Explore.Path<Order>(o => o.Cafe), "lark");
   Assert.Equal(1, picks.Count);
-  Assert.Equal("Northwind Café", picks[0].Text);
+  Assert.Equal("Larkspur Café", picks[0].Text);
   Assert.Equal(2, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.Cafe), Op = FilterOp.IsAnyOf,
                                                  Values = [$"{picks[0].Id}"], Labels = [picks[0].Text] }));        // o1, o2
 }
@@ -105,7 +105,7 @@ void empty_or_with_a_value() {
   var shipped = Explore.Path<Order>(o => o.ShippedAt);
   Assert.Equal(3, CountWhere(new ExploreFilter { Field = shipped, Op = FilterOp.IsEmpty }));                         // o4, o6, o8
   Assert.Equal(4, CountWhere(new ExploreFilter { Field = shipped, Op = FilterOp.HasValue }));
-  // A reference can be empty too: Corner Roast has no rep (o5, o8).
+  // A reference can be empty too: Mill Lane Roast has no rep (o5, o8).
   Assert.Equal(2, CountWhere(new ExploreFilter { Field = Explore.Path<Order>(o => o.Cafe.Rep), Op = FilterOp.IsEmpty }));
 }
 

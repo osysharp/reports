@@ -16,7 +16,7 @@ void what_stands_open_now_is_counted_whenever_it_arrived() {
 
 [Test(Roastery)]
 void what_stands_open_now_is_the_readers_own() {
-  // Ada's cafés (Northwind, Fjord) have shipped everything; Bo's (Pier o4, Kiln o6) have two waiting.
+  // Ada's cafés (Larkspur, Fjord) have shipped everything; Bo's (Pier o4, Kiln o6) have two waiting.
   runas (Ada) { Assert.Equal("0", RowText(RunSourceNow("orders", Orders([Curated("waiting")])), 0)); }
   runas (Bo) { Assert.Equal("2", RowText(RunSourceNow("orders", Orders([Curated("waiting")])), 0)); }
 }
@@ -74,7 +74,7 @@ void a_second_source_joins_the_breakdown_on_the_grouping_of_the_same_name() {
   Assert.Equal("Bike courier | 3 | –\nPost | 3 | –\nFreight | 1 | –", Rows(byCourier.Breakdown));
 }
 
-// …and each source answers the reader as they may read it: Ada's cafés are Northwind (o1, o2: three lines) and Fjord
+// …and each source answers the reader as they may read it: Ada's cafés are Larkspur (o1, o2: three lines) and Fjord
 // (o3: two lines).
 [Test(Roastery)]
 [runas(Ada)]

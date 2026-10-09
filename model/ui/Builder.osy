@@ -9,7 +9,7 @@ using Osysharp.Explore;
 //   own groupings first. Picking a field offers only what makes sense for its kind — group by it, measure it, filter on
 //   it — and the answer below changes as it is picked.
 // ⚑ A FILTER IS A SENTENCE. Every filter shows as a chip that reads as one ("Status is Placed or Roasting", "Café is
-//   Northwind"), and is removed with its ×. A filter on a field this reader can no longer reach (a saved report whose
+//   Larkspur"), and is removed with its ×. A filter on a field this reader can no longer reach (a saved report whose
 //   field was dropped, or that another person may read and they may not) stays on screen, marked, and the report says
 //   why it cannot run — it is never quietly dropped, because a dropped filter answers a wider question.
 
@@ -53,7 +53,7 @@ public ExploreField? FieldNamed(List<ExploreField> fields, string path) {
   return fields.FirstOrDefault(f => f.Path == path);
 }
 
-/// What a filter says, as a sentence — "Status is Placed or Roasting", "Kilos is at least 5", "Café is Northwind".
+/// What a filter says, as a sentence — "Status is Placed or Roasting", "Kilos is at least 5", "Café is Larkspur".
 public string FilterWords(ExploreFilter f, List<ExploreField> fields) {
   var field = FieldNamed(fields, f.Field);
   var name = field == null ? f.Field : TrailWords(field);

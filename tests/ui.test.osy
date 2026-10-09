@@ -27,7 +27,7 @@ void a_group_opens_its_rows_and_two_chosen_days_are_the_period() {
   Ui.Click("Show the rows of Coast");
   Assert.Visible("The rows behind Coast");
   Assert.Visible("Fjord Coffee", within: "The rows behind Coast");
-  Assert.Hidden("Northwind Café", within: "The rows behind Coast");
+  Assert.Hidden("Larkspur Café", within: "The rows behind Coast");
   Ui.Shot("builder-rows-behind-a-group-wide-light");
   Ui.Click("Dates…");
   Ui.Fill("First day", "2026-09-10");

@@ -3,17 +3,17 @@
 // "the last 30 days" holds seven, and every figure below can be worked out by hand.
 //
 //   order  café            placed       shipped        kg  value  courier  status     roast  organic  lines
-//   o1     Northwind Café  2 Sep 09:00  3 Sep 09:00    10  2400   Bike     Shipped    1h     yes      Kenya AA 6, Brazil 4
-//   o2     Northwind Café  10 Sep 09:00 10 Sep 15:00    5  1200   Bike     Shipped    30m    no       Kenya AA 5
+//   o1     Larkspur Café  2 Sep 09:00  3 Sep 09:00    10  2400   Bike     Shipped    1h     yes      Kenya AA 6, Brazil 4
+//   o2     Larkspur Café  10 Sep 09:00 10 Sep 15:00    5  1200   Bike     Shipped    30m    no       Kenya AA 5
 //   o3     Fjord Coffee    12 Sep 08:00 14 Sep 08:00   20  4600   Freight  Shipped    2h     yes      Ethiopia 10, Kenya AA 10
 //   o4     Pier Coffee     15 Sep 10:00 —               8  1900   Post     Roasting   1h     no       Brazil 8
-//   o5     Corner Roast    20 Sep 11:00 21 Sep 11:00   12  2900   Post     Shipped    1h30m  yes      Ethiopia 12
+//   o5     Mill Lane Roast    20 Sep 11:00 21 Sep 11:00   12  2900   Post     Shipped    1h30m  yes      Ethiopia 12
 //   o6     Kiln & Cup      28 Sep 09:00 —               4   980   Bike     Placed     0      no       Kenya AA 2, Kenya AA 2
 //   o7     Kiln & Cup      20 Aug 09:00 21 Aug 09:00    6  1400   Post     Shipped    1h     no       —
-//   o8     Corner Roast    30 Sep 08:00 —               3   700   Post     Cancelled  0      no       —
+//   o8     Mill Lane Roast    30 Sep 08:00 —               3   700   Post     Cancelled  0      no       —
 //
-// Regions: Northwind → North; Fjord and Pier → Coast; Corner and Kiln → City. Ada looks after Northwind and Fjord; Bo
-// after Pier and Kiln; nobody after Corner. Only Olle reads the price list Northwind is on.
+// Regions: Larkspur → North; Fjord and Pier → Coast; Mill Lane and Kiln → City. Ada looks after Larkspur and Fjord; Bo
+// after Pier and Kiln; nobody after Mill Lane. Only Olle reads the price list Larkspur is on.
 using Osysharp.Identity;
 using Osysharp.Explore;
 using Osysharp.Reports;
@@ -35,15 +35,15 @@ void Roastery() {
   var coast = new Region { Name = "Coast" };
   var city = new Region { Name = "City" };
   var wholesale = new PriceList { Name = "Wholesale 2026" };
-  var northwind = new Cafe { Name = "Northwind Café", Region = north, Rep = ada, PriceList = wholesale, Contact = "hello@northwind.test" };
+  var larkspur = new Cafe { Name = "Larkspur Café", Region = north, Rep = ada, PriceList = wholesale, Contact = "hello@larkspur.test" };
   var fjord = new Cafe { Name = "Fjord Coffee", Region = coast, Rep = ada };
   var pier = new Cafe { Name = "Pier Coffee", Region = coast, Rep = bo };
-  var corner = new Cafe { Name = "Corner Roast", Region = city };
+  var corner = new Cafe { Name = "Mill Lane Roast", Region = city };
   var kiln = new Cafe { Name = "Kiln & Cup", Region = city, Rep = bo };
 
-  var o1 = OrderOf(northwind, Sep(2, 9), Sep(3, 9), 10m, 2400m, Courier.Bike, OrderStatus.Shipped, 60, true);
+  var o1 = OrderOf(larkspur, Sep(2, 9), Sep(3, 9), 10m, 2400m, Courier.Bike, OrderStatus.Shipped, 60, true);
   Line(o1, "Kenya AA", 6m); Line(o1, "Brazil", 4m);
-  var o2 = OrderOf(northwind, Sep(10, 9), Sep(10, 15), 5m, 1200m, Courier.Bike, OrderStatus.Shipped, 30, false);
+  var o2 = OrderOf(larkspur, Sep(10, 9), Sep(10, 15), 5m, 1200m, Courier.Bike, OrderStatus.Shipped, 30, false);
   Line(o2, "Kenya AA", 5m);
   var o3 = OrderOf(fjord, Sep(12, 8), Sep(14, 8), 20m, 4600m, Courier.Freight, OrderStatus.Shipped, 120, true);
   Line(o3, "Ethiopia", 10m); Line(o3, "Kenya AA", 10m);

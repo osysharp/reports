@@ -6,7 +6,7 @@ using Osysharp.Reports;
 // id (`/reports/{id}`); the clock its days are counted on is `Osysharp.Clock`'s settings page (`/settings/clock`).
 
 [Title("Orders report")]
-[Page("/reports")]
+[Route("/reports")]
 [Authorize(ReadsReports)]
 [Render(CSR)]
 component OrdersReport() {
@@ -14,7 +14,7 @@ component OrdersReport() {
 }
 
 [Title("Orders overview")]
-[Page("/overview")]
+[Route("/overview")]
 [Authorize(ReadsReports)]
 [Render(CSR)]
 component OrdersOverview() {
@@ -26,7 +26,7 @@ component OrdersOverview() {
 }
 
 [Title("Orders report")]
-[Page("/reports/{id}")]
+[Route("/reports/{id}")]
 [Authorize(ReadsReports)]
 [Render(CSR)]
 component SavedOrdersReport(Guid id) {
