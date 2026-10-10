@@ -2,11 +2,11 @@ namespace Osysharp.Reports;
 
 using Osysharp.Identity;
 using Osysharp.Explore;
-using Osysharp.Clock;
+using Osysharp.TimeZone;
 
 // ── what the builder asks the server ──────────────────────────────────────────────────────────────────────────────────
 //
-// ⚑ THE PERIOD IS THE SERVER'S. "Last 30 days" is read on the app's clock (Settings › Time and date, `Osysharp.Clock`),
+// ⚑ THE PERIOD IS THE SERVER'S. "Last 30 days" is read on the app's clock (Settings › Time and date, `Osysharp.TimeZone`),
 //   which only the server holds; the builder sends the preset and gets the answer with the period's words. The page never computes a day.
 
 /// What the builder opens with: the source in the app's words, every field the reader may reach from its root, and

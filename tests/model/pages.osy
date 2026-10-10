@@ -3,7 +3,7 @@ namespace ReportsKitTests;
 using Osysharp.Reports;
 
 // The roastery's one page: its orders report, the kit's builder over the `orders` source. Saved reports open by their
-// id (`/reports/{id}`); the clock its days are counted on is `Osysharp.Clock`'s settings page (`/settings/clock`).
+// id (`/reports/{id}`); the clock its days are counted on is `Osysharp.TimeZone`'s settings page (`/settings/clock`).
 
 [Title("Orders report")]
 [Route("/reports")]

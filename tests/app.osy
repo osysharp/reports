@@ -7,7 +7,7 @@ app ReportsKitTests {
   use Osysharp.Identity@0;
   use Osysharp.Reports@0;
   // The clock a report's days are counted on.
-  use Osysharp.Clock@0;
+  use Osysharp.TimeZone@0;
   use Osysharp.Explore;
   use Osysharp.Charts@1;
   use Osysharp.Csv@0;

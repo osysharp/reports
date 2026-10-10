@@ -11,7 +11,7 @@ reads only the aggregate rows it shows, never the orders themselves.
 ```osy
 use Osysharp.Reports@0;
 use Osysharp.Explore;
-use Osysharp.Clock@0;               // the time zone a day and a week are counted in
+use Osysharp.TimeZone@0;               // the time zone a day and a week are counted in
 
 policy ReadsReports => IsStaff;     // who opens reports
 policy SharesReports => IsLead;     // who shares a saved report with the team
@@ -57,12 +57,12 @@ field a reader may reach from that root is offered too, from your model.
 | **Measures** | count, total, average, median, any percentile (the 90th is one click), count of different values, earliest and latest; a time between two dates (shipped since placed); a share of one count in another. Your app's own measures come first, in its words |
 | **Filters you build by pointing** | pick a field and the filter fits its kind: tick choices, pick records with a search, a number or a duration more than, less than or between, a date range in your app's time zone, words that contain or start with, yes or no, empty or not. Conditions read back as sentences ("Courier is Bike courier or Freight"), and nest in "all of" and "any of" groups |
 | **Show groups where** | conditions on the groups themselves, by their measures ("cafés with more than ten orders"), kept apart from the conditions on rows |
-| **Periods in your time zone** | today, 7, 30 and 90 days, this week, month, quarter and year, last month, or two days you choose. A day, a week and a month start at midnight in the app's time zone, picked from a list in Settings › Time and date (Osysharp.Clock), and follow summer time. A trend has a bar for every day, even a quiet one |
+| **Periods in your time zone** | today, 7, 30 and 90 days, this week, month, quarter and year, last month, or two days you choose. A day, a week and a month start at midnight in the app's time zone, picked from a list in Settings › Time and date (Osysharp.TimeZone), and follow summer time. A trend has a bar for every day, even a quiet one |
 | **The overview** | headline figures with their change against the period before (in the success colour when it is good news, whichever way that is), what stands open now, the trend, and a breakdown by any of your groupings. A figure from a second source joins the breakdown on the grouping of the same name |
 | **The rows behind every figure** | press a figure, or a row of a grouped table, and see the rows it counted: "Shipped" for one region lists that region's shipped orders, a day of a trend that day's. Give the source the fields to list (`RowFields`) |
 | **CSV** | the same period, the same rows and the same words as the screen, written by one function, so the file and the page cannot disagree |
 | **Saved reports** | a report keeps the question, never the numbers. Whoever opens it sees the rows they may read, as they are then. A private one is its owner's; a shared one is everybody's who reads reports |
-| **Custom fields as columns** | rows a kit keeps one per record and key, a custom field's answers, are columns of the record: "Ticket › Customer › Their plan" groups, filters and sums as its kind reads. With `Osysharp.Fields` it takes one relation in your model |
+| **Custom fields as columns** | rows a kit keeps one per record and key, a custom field's answers, are columns of the record: "Ticket › Customer › Their plan" groups, filters and sums as its kind reads. With `Osysharp.CustomFields` it takes one relation in your model |
 | **Only what the reader may read** | a field masked for the reader, or a path into something they may read none of, is never offered, and a saved report naming one says so rather than answering a smaller question. A row they may not read counts for nothing |
 
 | The overview | Filters in nested groups |

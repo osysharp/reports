@@ -18,7 +18,7 @@
 //
 // Docs: osy docs reports-kit.
 package Osysharp.Reports {
-  version "0.4.2";
+  version "0.4.3";
   minPlatform "0.9.0";
   summary     "reports a team builds for itself — start from one thing the app keeps, pick fields by following its relations, group, measure (counts, totals, averages, medians and percentiles) and filter, all computed in the database as the reader may read it — read as figures, a table and a chart, exported as CSV, saved and shared by name.";
   model "model/**/*.osy";
@@ -26,7 +26,7 @@ package Osysharp.Reports {
   // The compiler every report runs through — the platform's.
   use Osysharp.Explore;
   // The clock a day, a week and a month are counted on — the app's one time-zone setting.
-  use Osysharp.Clock@0;
+  use Osysharp.TimeZone@0;
   // The chart under a grouping — line and column, from the Charts kit.
   use Osysharp.Charts@1;
   // A CSV export, written so a spreadsheet opens it the same way everywhere…

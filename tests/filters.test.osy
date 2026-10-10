@@ -2,7 +2,7 @@
 // (seven orders in the last 30 days; see roastery.test.osy). Every value reaches the database as a parameter.
 using Osysharp.Explore;
 using Osysharp.Reports;
-using Osysharp.Clock;
+using Osysharp.TimeZone;
 using ReportsKitTests;
 
 [Test(Roastery)]

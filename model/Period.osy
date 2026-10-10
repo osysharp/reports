@@ -1,7 +1,7 @@
 namespace Osysharp.Reports;
 
 using Osysharp.Explore;
-using Osysharp.Clock;
+using Osysharp.TimeZone;
 
 // ── the period a report covers ────────────────────────────────────────────────────────────────────────────────────────
 //
@@ -38,7 +38,7 @@ public class ReportPeriod {
   public DayOfWeek WeekStart = DayOfWeek.Monday;
 }
 
-/// The period `preset` names at `now`, on the app's clock (`Osysharp.Clock`). For `Custom`, `first` and `last` are the
+/// The period `preset` names at `now`, on the app's clock (`Osysharp.TimeZone`). For `Custom`, `first` and `last` are the
 /// days chosen.
 public ReportPeriod PeriodOf(PeriodPreset preset, DateTime now, AppClock clock, DateOnly? first = null, DateOnly? last = null) {
   var today = clock.DayOf(now);
