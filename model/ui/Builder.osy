@@ -28,7 +28,7 @@ public string PresetShort(PeriodPreset p) {
 }
 
 /// A field's trail as a person reads it — "Order › Café › Region".
-public string TrailText(ExploreField f) { return String.Join(" › ", f.Trail); }
+public string TrailText(ExploreField? f) { return f == null ? "" : String.Join(" › ", f.Trail); }   // no field picked yet: nothing to say
 
 /// Where a field sits, without its own name — "Order › Café". What the picker shows beside the field's label.
 public string TrailOf(ExploreField f) {
@@ -74,7 +74,8 @@ public string FilterWords(ExploreFilter f, List<ExploreField> fields) {
 /// ("Café › Region", "Customer › NPS"). Both are the trail's own words, so both are in the reader's language (a custom
 /// field's name is a person's, kept as they wrote it), and the arrow reads the same way in every language — where
 /// "Café region" puts the words in an order only some languages use.
-public string TrailWords(ExploreField f) {
+public string TrailWords(ExploreField? f) {
+  if (f == null) { return ""; }     // no field picked yet
   if (f.Depth == 0 || f.Trail.Length < 2) { return f.Label; }
   return $"{f.Trail[f.Trail.Length - 2]} › {f.Label}";
 }
