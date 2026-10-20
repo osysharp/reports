@@ -9,7 +9,7 @@ Every report is computed in the database, as the person reading it may read it. 
 reads only the aggregate rows it shows, never the orders themselves.
 
 ```osy
-use Osysharp.Reports@0;
+use Osysharp.Reports@1;
 use Osysharp.Explore;
 use Osysharp.TimeZone@0;               // the time zone a day and a week are counted in
 

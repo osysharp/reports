@@ -5,7 +5,7 @@ app ReportsKitTests {
   model "model/**/*.osy";
   tests "**/*.test.osy";
   use Osysharp.Identity@0;
-  use Osysharp.Reports@0;
+  use Osysharp.Reports@1;
   // The clock a report's days are counted on.
   use Osysharp.TimeZone@0;
   use Osysharp.Explore;
