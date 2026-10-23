@@ -390,8 +390,10 @@ public component ReportBuilder(ReportSource report, Guid? open = null) {
                   role: UiRole.Region, label: "Conditions") {
               FilterTree(where, "", 0, desk!.Fields, answer, target, RemoveFilter, AddConditionTo, AddGroupTo, RemoveGroup, Flip);
               if (filtering != null) {
+                // Keyed by the field and the group it lands in: the editor's operator, ticks and text are seeded from
+                // them, and on a wide screen another field can be picked while it is open.
                 FilterEditor(source, filtering!, GroupAt(where, target).Filters.FirstOrDefault(x => x.Field == filtering!.Path),
-                             ApplyFilter, CancelFilter);
+                             ApplyFilter, CancelFilter, key: target + "/" + filtering!.Path);
               }
               if (groups.Count > 0) {
                 Box(w: "100%", borderTW: 1, border: Colors.Border, pt: 3) {
@@ -465,7 +467,8 @@ component ReportHead(ReportDesk desk, string savedAs, string period, PeriodPrese
         Button("Save", onPress: onSave, tone: Tone.Primary);
         }
       }
-      PeriodTabs(preset, onPeriod, onDates, first, last);
+      // Keyed by the dates: its "Dates…" fields are seeded from them, and opening a saved report moves them.
+      PeriodTabs(preset, onPeriod, onDates, first, last, key: $"{first}|{last}");
     }
   }
 }
