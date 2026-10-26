@@ -34,7 +34,7 @@ public class ReportPeriod {
   public DateOnly LastDay;
   /// A day for a month, a week for a quarter, a month for a year — about thirty points, never three hundred.
   public TimeBucket Bucket = TimeBucket.Day;
-  public Zone Zone = Zone.Of("UTC");
+  public TimeZoneInfo Zone = TimeZoneInfo.FindSystemTimeZoneById("UTC");
   public DayOfWeek WeekStart = DayOfWeek.Monday;
 }
 
@@ -110,7 +110,11 @@ public List<DateTime> BucketsOf(ReportPeriod p) {
   List<DateTime> starts = [];
   var day = p.FirstDay;
   if (p.Bucket == TimeBucket.Hour) {
-    for (var h = 0; h < 24; h = h + 1) { starts.Add(p.Zone.Resolve(day, new TimeOnly(h, 0))); }
+    // The hour the clocks skip in spring never starts — on that day the wall clock has 23 hours, not 24.
+    for (var h = 0; h < 24; h = h + 1) {
+      var wall = day.ToDateTime(new TimeOnly(h, 0));
+      if (!p.Zone.IsInvalidTime(wall)) { starts.Add(TimeZoneInfo.ConvertTimeToUtc(wall, p.Zone)); }
+    }
     return starts;
   }
   if (p.Bucket == TimeBucket.Week) {
@@ -119,7 +123,7 @@ public List<DateTime> BucketsOf(ReportPeriod p) {
   }
   if (p.Bucket == TimeBucket.Month) { day = new DateOnly(day.Year, day.Month, 1); }
   while (day <= p.LastDay && starts.Count < 400) {
-    starts.Add(p.Zone.Resolve(day, new TimeOnly(0, 0)));
+    starts.Add(TimeZoneInfo.ConvertTimeToUtc(day.ToDateTime(new TimeOnly(0, 0)), p.Zone));
     day = p.Bucket == TimeBucket.Day ? day.AddDays(1) : (p.Bucket == TimeBucket.Week ? day.AddDays(7) : day.AddMonths(1));
   }
   return starts;
@@ -127,7 +131,7 @@ public List<DateTime> BucketsOf(ReportPeriod p) {
 
 /// How a bucket start is labelled on a trend's axis — "14", "Mon 6", "Sep".
 public string BucketLabel(DateTime start, ReportPeriod p) {
-  var local = start.InZone(p.Zone);
+  var local = TimeZoneInfo.ConvertTimeFromUtc(start, p.Zone);
   if (p.Bucket == TimeBucket.Hour) { return $"{local:HH}"; }
   if (p.Bucket == TimeBucket.Month) { return $"{local:MMM}"; }
   return $"{local:d MMM}";

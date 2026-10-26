@@ -113,13 +113,13 @@ public List<ExploreFilter> GroupNarrowing(List<ExploreColumn> columns, ExploreRo
 /// to summer time still ends at the next midnight.
 DateTime BucketEnd(DateTime start, TimeBucket bucket, ReportPeriod period) {
   if (bucket == TimeBucket.Hour) { return start.AddHours(1); }
-  var day = DateOnly.FromDateTime(start.InZone(period.Zone));
+  var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(start, period.Zone));
   var next = bucket == TimeBucket.Day ? day.AddDays(1)
     : bucket == TimeBucket.Week ? day.AddDays(7)
     : bucket == TimeBucket.Month ? day.AddMonths(1)
     : bucket == TimeBucket.Quarter ? day.AddMonths(3)
     : day.AddYears(1);
-  return period.Zone.Resolve(next, new TimeOnly(0, 0));
+  return TimeZoneInfo.ConvertTimeToUtc(next.ToDateTime(new TimeOnly(0, 0)), period.Zone);
 }
 
 /// Runs `query` over the source filed under `key` AS THINGS STAND — no period: what is open now, whenever it arrived.
