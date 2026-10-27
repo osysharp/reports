@@ -81,3 +81,93 @@ medians and percentiles, a month in Stockholm across the change to winter time, 
 of every kind, nested groups, conditions on groups, the CSV against the screen, saved reports shared and private, and
 each reader seeing only their own orders. The builder and the overview are driven as a person would use them, wide and
 on a phone, light and dark, with `osy test`, and photographed in a real browser with `osy test --pixels`.
+
+## Examples
+
+Taken from this package's own tests, which compile and run on every release.
+
+```osy
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+[Test(Roastery)]
+[runas(Olle)]
+void the_csv_is_the_table_row_for_row() {
+  var a = RunSourceReport("orders", Orders([Curated("orders"), Curated("value"), Curated("shipMedian")],
+                                           groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]),
+                          PeriodPreset.Last30Days);
+  var csv = ReadCsv(ReportCsv(a.Result, OrderSource()));
+  Assert.Equal(3, csv.Rows.Count);
+  // The headings are the source's words, as the table's header row shows them.
+  Assert.Equal("City", csv.Get(csv.Rows[0], "Region"));
+  Assert.Equal("3", csv.Get(csv.Rows[0], "Orders"));
+  Assert.Equal("4,580", csv.Get(csv.Rows[0], "Value"));
+  Assert.Equal("24 h", csv.Get(csv.Rows[0], "Time to ship"));
+  // …and every cell is the table's cell.
+  for (var i = 0; i < a.Result.Rows.Count; i = i + 1) {
+    var cells = RowText(a.Result, i).Split(" | ");
+    for (var j = 0; j < cells.Length; j = j + 1) {
+      Assert.Equal(cells[j], csv.Get(csv.Rows[i], HeadingOf(a.Result.Columns[j], OrderSource())));
+    }
+  }
+}
+```
+
+From [`tests/csv.test.osy`](tests/csv.test.osy).
+
+```osy
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+[Test(Roastery)]
+[runas(Olle)]
+void a_groups_rows_are_the_rows_its_figure_counted() {
+  var q = Orders([Curated("shipped"), Curated("orders")],
+                 groups: [new ExploreGroup { Field = Explore.Path<Order>(o => o.Cafe.Region) }]);
+  var a = RunSourceReport("orders", q, PeriodPreset.Last30Days);
+  var coast = a.Result.Rows.FindIndex(r => r.Cells[0].Text == "Coast");
+  Assert.Equal("Coast | 1 | 2", RowText(a.Result, coast));
+  var shipped = RunSourceRows("orders", q, "shipped", PeriodPreset.Last30Days, columns: a.Result.Columns, row: a.Result.Rows[coast]);
+  Assert.Equal("", shipped.Result.Problem);
+  Assert.Equal(1, shipped.Result.Rows.Count);
+  Assert.Equal("Fjord Coffee", shipped.Result.Rows[0].Cells[0].Text);
+  var placed = RunSourceRows("orders", q, "orders", PeriodPreset.Last30Days, columns: a.Result.Columns, row: a.Result.Rows[coast]);
+  Assert.Equal(2, placed.Result.Rows.Count);
+}
+```
+
+From [`tests/drill.test.osy`](tests/drill.test.osy).
+
+```osy
+using Osysharp.Explore;
+using Osysharp.Reports;
+using ReportsKitTests;
+
+[Test(Roastery)]
+[runas(Olle)]
+void the_curated_totals_for_the_last_30_days_are_the_septembers_seven_orders() {
+  var a = RunSourceReport("orders", Orders([Curated("orders"), Curated("kilos"), Curated("value"), Curated("shipped"),
+                                            Curated("shippedShare"), Curated("shipMedian"), Curated("shipP90")]),
+                          PeriodPreset.Last30Days);
+  Assert.Equal("", a.Result.Problem);
+  Assert.Equal("1 Sep – 30 Sep 2026", a.Period);
+  // 7 orders · 62 kg · 14,680 kr · 4 shipped · 4 of 7 shipped · shipped after 6, 24, 24 and 48 hours: the median is 24 h,
+  // and the 90th percentile 24 + 0.7 × 24 = 40.8 hours.
+  Assert.Equal("7 | 62 | 14,680 | 4 | 57.1% | 24 h | 40 h 48 min", RowText(a.Result, 0));
+}
+```
+
+From [`tests/figures.test.osy`](tests/figures.test.osy).
+
+## Learn more
+
+- [The Osysharp.Reports reference](https://osysharp.com/reference/ui/reports-kit/)
+- [Osysharp.Reports in the package catalogue](https://osysharp.com/packages/#osysharp-reports)
+- [The Osy# reference](https://osysharp.com/reference/) — the language, the runtime and every kit
+- [`llms-full.txt`](https://osysharp.com/llms-full.txt) — the whole reference and specification as one Markdown file, for a coding agent
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
