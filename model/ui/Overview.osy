@@ -25,6 +25,9 @@ public component PeriodTabs(PeriodPreset preset, Action<PeriodPreset> onPeriod, 
   DateOnly? from = first;
   DateOnly? to = last;
   string problem = "";
+  // The fields follow the screen's days: opening a saved report, or choosing days, moves them — in place, so the tabs
+  // stay on the screen and are patched (a key on the dates used to rebuild the whole strip on every choice).
+  on change { from = first; to = last; }
   action Choose() {
     choosing = !choosing;
     problem = "";

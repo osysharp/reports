@@ -467,8 +467,8 @@ component ReportHead(ReportDesk desk, string savedAs, string period, PeriodPrese
         Button("Save", onPress: onSave, tone: Tone.Primary);
         }
       }
-      // Keyed by the dates: its "Dates…" fields are seeded from them, and opening a saved report moves them.
-      PeriodTabs(preset, onPeriod, onDates, first, last, key: $"{first}|{last}");
+      // Its "Dates…" fields follow the dates (its own `on change`): opening a saved report moves them.
+      PeriodTabs(preset, onPeriod, onDates, first, last);
     }
   }
 }

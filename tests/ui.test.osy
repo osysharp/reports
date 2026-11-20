@@ -37,6 +37,24 @@ void a_group_opens_its_rows_and_two_chosen_days_are_the_period() {
   Ui.Shot("builder-chosen-days-wide-light");
 }
 
+/// A saved report opened from the builder's own menu moves the period to its days, and "Dates…" then offers those days —
+/// the fields follow the days while the strip stays on the screen (patched in place, never rebuilt to re-seed them).
+[Test(Roastery)]
+void a_saved_reports_days_are_what_dates_offers() {
+  runas (Olle) {
+    SaveReport("orders", "Mid September", Orders([Curated("orders")]), PeriodPreset.Custom, false,
+               new DateOnly(2026, 9, 10), new DateOnly(2026, 9, 15));
+  }
+  Ui.SignInAs(Olle);
+  OpenTheReport(1440, 900);
+  Ui.Click("Saved reports");
+  Ui.Click("Mid September");
+  Assert.Visible("10 Sep – 15 Sep 2026");
+  Ui.Click("Dates…");
+  Assert.Visible("10 Sep 2026", within: "Choose the dates");
+  Assert.Visible("15 Sep 2026", within: "Choose the dates");
+}
+
 [Test(Roastery)]
 void the_builder_opens_on_the_periods_totals_and_groups_through_two_relations() {
   Ui.SignInAs(Olle);
